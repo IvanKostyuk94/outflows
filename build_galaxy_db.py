@@ -2,19 +2,11 @@ import os
 import numpy as np
 import pandas as pd
 import pyTNG.utils as utils
-from pyTNG import data_interface as _data_interface
 from pyTNG.cosmology import TNGcosmo
 from config import config
+from utils import get_sim
 
 h = TNGcosmo.h
-
-
-def get_sim():
-    basepath = "/virgotng/universe/IllustrisTNG/"
-    sim_name = "L35n2160TNG"
-    sim = _data_interface.TNG50Simulation(os.path.join(basepath, sim_name))
-    sim_path = os.path.join(basepath, sim_name, "output")
-    return sim, sim_path
 
 
 def get_halo_df(sim, snap_num):
