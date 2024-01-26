@@ -1,11 +1,12 @@
 import numpy as np
 from matplotlib import pyplot as plt
 from config import config
-from utils import *
+from utils import get_redshift, scale_factor
 from pyTNG.cosmology import TNGcosmo
 from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
 from matplotlib import colors
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+from matplotlib import colormaps
 
 
 def plot_parameters_comp():
@@ -33,14 +34,12 @@ def plot_parameters_comp():
     parameters["height_per_image"] = 6
     parameters["width_per_image"] = 6
 
-    parameters["x_label_convergence"] = r"Grid cells"
-    parameters["y_label_convergence"] = r"$f_\mathrm{esc}$"
-
     parameters["nx"] = 45
     parameters["ny"] = 30
 
-    parameters["v_min"] = -4
-    parameters["v_max"] = 0
+    parameters["vmin"] = 100
+    parameters["vcenter"] = 150
+    parameters["vmax"] = 200
 
     parameters["x_lim_min"] = -4.8
     parameters["x_lim_max"] = 0
@@ -53,6 +52,8 @@ def plot_parameters_comp():
     parameters["linewidth"] = 3
     parameters["capsize"] = 10
     parameters["capwidth"] = 3
+
+    parameters["color_label"] = r"$v_\mathrm{out}$"
     return parameters
 
 
@@ -83,11 +84,13 @@ def draw_sizebar(ax, r_vir, grid_shape, snap, length_kpc=1):
     )
     ax.add_artist(asb)
 
+
 def create_color_bar(
     f,
     ax,
     parameters,
     subfig,
+    prop,
     label=None,
     ax_is_cbar=False,
     horizontal=False,
@@ -113,6 +116,7 @@ def create_color_bar(
         cax = divider.append_axes("right", size="5%", pad=pad)
         cbar = f.colorbar(subfig, cax=cax)
 
+    print(prop)
     if label is not None:
         size = parameters["colorbar_labelsize"]
         cbar.set_label(label, size=size, labelpad=18)
@@ -127,18 +131,41 @@ def create_color_bar(
     return
 
 
+def get_flow_image(gas, outflow_only, axis, threshold_vel):
+    if outflow_only:
+        data = gas["Flow_Velocities"]
+    else:
+        data = np.where(
+            gas["Flow_Velocities"] > threshold_vel, gas["Flow_Velocities"], 0
+        )
 
-def plot_outflow_comparison(gas, out_gas, r_vir):
+    image = np.where(
+        (data != 0).sum(axis) != 0,
+        np.true_divide(data.sum(axis), (data != 0).sum(axis)),
+        0,
+    )
+    return image
+
+
+def plot_outflow_comparison(
+    gas, out_gas, r_vir, prop, snap, threshold_vel=100
+):
     parameters = plot_parameters_comp()
 
-    image_columns = 3
+    image_columns = 4
     image_rows = 2
     figsize = (
         parameters["width_per_image"] * image_columns,
         parameters["height_per_image"] * image_rows,
     )
+    col_norm = colors.TwoSlopeNorm(
+        vmin=parameters["vmin"],
+        vcenter=parameters["vcenter"],
+        vmax=parameters["vmax"],
+    )
+
     fig, axs = plt.subplots(
-        ncols=image_columns + 1,
+        ncols=image_columns,
         nrows=image_rows,
         gridspec_kw={
             "hspace": 0.01,
@@ -147,16 +174,41 @@ def plot_outflow_comparison(gas, out_gas, r_vir):
         },
         figsize=figsize,
     )
-    create_color_bar(
-        fig,
-        ax_col,
-        parameters,
-        subfig,
-        label=label,
-        multiple=True,
-        ax_is_cbar=True,
-        horizontal=horizontal,
-        prop=prop,
-    )
-    ax.get_xaxis().set_visible(False)
-                ax.get_yaxis().set_visible(False)
+
+    for column in range(4):
+        for row in range(2):
+            ax = axs[row, column]
+            if column < 3:
+                if row == 0:
+                    outflow_only = True
+                    data = out_gas
+                else:
+                    outflow_only = False
+                    data = gas
+                image = get_flow_image(
+                    data,
+                    outflow_only,
+                    axis=column,
+                    threshold_vel=threshold_vel,
+                )
+                subfig = ax.pcolormesh(
+                    image,
+                    cmap=colormaps["inferno"],
+                    norm=col_norm,
+                    # cmap=colormaps["coolwarm"],
+                )
+                draw_sizebar(ax, r_vir, image.shape, snap, length_kpc=1)
+            else:
+                create_color_bar(
+                    fig,
+                    ax,
+                    parameters,
+                    subfig,
+                    label=parameters["color_label"],
+                    ax_is_cbar=True,
+                    horizontal=True,
+                    prop=prop,
+                )
+            ax.get_xaxis().set_visible(False)
+            ax.get_yaxis().set_visible(False)
+    return
