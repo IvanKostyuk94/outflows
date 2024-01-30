@@ -100,8 +100,8 @@ def match_with_galaxy(halo_df, galaxy_df):
 
 
 def build_full_df(snap):
-    halo_df = get_reduced_df(4, type="halo")
-    galaxy_df = get_reduced_df(4, type="galaxy")
+    halo_df = get_reduced_df(snap, type="halo")
+    galaxy_df = get_reduced_df(snap, type="galaxy")
     full_df = match_with_galaxy(halo_df, galaxy_df)
     return full_df
 
