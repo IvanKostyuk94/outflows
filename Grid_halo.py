@@ -4,6 +4,7 @@ from pyTNG import gridding, gas_temperature
 import pandas as pd
 import numpy as np
 from config import config
+from sklearn.decomposition import PCA
 
 
 # Corrects the particle dictionary to only contain the particles in relevant
@@ -81,7 +82,52 @@ def select_outflowing_gas(gas, threshold_velocity):
     return rel_gas
 
 
-def grid_gas(gas, r_vir, gal_center, grid_size=100, n_threads=8):
+def gal_plane_tranformer(particles, r_vir):
+    particles["Relative_Distances"] = np.sqrt(
+        np.sum(np.square(particles["Relative_Coordinates"]), axis=1)
+    )
+    idces_rel_particles = particles["Relative_Distances"] < 0.015 * r_vir
+    rel_particles = map_to_new_dict(particles, idces_rel_particles)
+    pca = PCA(3)
+    pca.fit(rel_particles["Coordinates"])
+    return pca
+
+
+def rotate_into_galactic_plane(gas, center, r_vir):
+    gas["Original_Coordinates"] = gas["Coordinates"]
+    # pca = PCA(3)
+    # pca.fit(gas["Coordinates"])
+    transformer = gal_plane_tranformer(gas, r_vir)
+    gas["Coordinates"] = transformer.transform(gas["Coordinates"])
+    center = transformer.transform(center)
+    return center[0]
+
+
+def grid_gas(
+    halo_id,
+    df,
+    snap,
+    out_only,
+    threshold_velocity=100,
+    grid_size=100,
+    n_threads=8,
+):
+    idx = halo_id
+    halo_id = idx
+    gal_center = np.array(
+        [
+            float(df[df.Halo_id == halo_id].Galaxy_pos_x),
+            float(df[df.Halo_id == halo_id].Galaxy_pos_y),
+            float(df[df.Halo_id == halo_id].Galaxy_pos_z),
+        ]
+    )
+    r_vir = float(df[df.Halo_id == halo_id].R_vir)
+
+    gas = retrieve_halo_gas(df, snap, halo_id)
+    gal_center = rotate_into_galactic_plane(gas, [gal_center], r_vir)
+    if out_only:
+        gas = select_outflowing_gas(gas, threshold_velocity)
+
     quants = [
         "Temperature",
         "GFM_Metallicity",
@@ -90,8 +136,7 @@ def grid_gas(gas, r_vir, gal_center, grid_size=100, n_threads=8):
         "Relative_Velocities_z",
         "Flow_Velocities",
     ]
-    box_size = r_vir * 2 * float(config["cutout_scale"]) * np.ones(3)
-
+    box_size = r_vir * 2 * float(config["cutout_scale"]) * np.ones(3) / 2
     shape = (grid_size * np.ones(3)).astype(np.int64)
     grid_cen = gal_center
     grids = gridding.depositParticlesOnGrid(
@@ -116,7 +161,7 @@ def grid_gas(gas, r_vir, gal_center, grid_size=100, n_threads=8):
         n_threads=n_threads,
         mass_key="StarFormationRate",
     )
-    grids["SFR"] = grid_sfr["StarFormationRate"]
+    grids["StarFormationRate"] = grid_sfr["StarFormationRate"]
 
     for quant in quants:
         grids[quant] = np.where(
