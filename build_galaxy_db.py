@@ -31,6 +31,7 @@ def get_galaxy_df(sim, snap_num):
         "SubhaloWindMass",
         "SubhaloSFR",
         "SubhaloMassType",
+        "SubhaloHalfmassRadType",
     ]
     sub_dict = {key: dataset[key] for key in keys_needed}
     dataset_df = utils.dfFromArrDict(sub_dict)
@@ -66,6 +67,7 @@ def reduce_galaxy_df(df):
         Galaxy_M_star=reduced_df[("SubhaloMassType", 4)],
         Galaxy_M_wind=reduced_df[("SubhaloWindMass", 0)],
         Galaxy_SFR=reduced_df[("SubhaloSFR", 0)],
+        Galaxy_HMR=reduced_df[("SubhaloHalfmassRadType", 4)],
         Galaxy_vel_x=reduced_df[("SubhaloVel", 0)],
         Galaxy_vel_y=reduced_df[("SubhaloVel", 1)],
         Galaxy_vel_z=reduced_df[("SubhaloVel", 2)],
