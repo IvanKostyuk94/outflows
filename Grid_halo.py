@@ -39,6 +39,7 @@ def retrieve_halo_gas(df, snap, halo_id):
     gas = il.snapshot.loadHalo(sim_path, snap, halo_id, "gas")
     z = get_redshift(4)
     gas["Velocities"] = gas["Velocities"] * np.sqrt(scale_factor(z))
+    gas["Potential"] = gas["Potential"] / scale_factor(z)
     galaxy_vel = np.array(
         [
             float(df[df.Halo_id == halo_id].Galaxy_vel_x),
@@ -63,19 +64,26 @@ def retrieve_halo_gas(df, snap, halo_id):
         np.multiply(gas["Relative_Velocities"], gas["Direction"]).sum(axis=1)
     )
     gas_temperature.gasTemp(gas)
-    gas["hsml"] = 2.5 * (3 * (gas["Masses"] / gas["Density"]) / (4.0 * np.pi)) ** (
-        1.0 / 3
-    )
+    gas["hsml"] = 2.5 * (
+        3 * (gas["Masses"] / gas["Density"]) / (4.0 * np.pi)
+    ) ** (1.0 / 3)
     return gas
 
 
 # Threshold velocities should be provided as absolute velocities in km/s
-def select_outflowing_gas(gas, threshold_velocity):
+def select_outflowing_gas(gas, threshold_velocity=None, v_esc_ratio=None):
     if gas["count"] == 0:
         return gas
     else:
-        idces_rel_gas = gas["Flow_Velocities"] > threshold_velocity
+        if threshold_velocity is not None:
+            idces_rel_gas = gas["Flow_Velocities"] > threshold_velocity
+        else:
+            idces_rel_gas = (
+                0.5 * gas["Flow_Velocities"] ** 2
+                > v_esc_ratio * gas["Potential"]
+            )
         rel_gas = map_to_new_dict(gas, idces_rel_gas)
+
     return rel_gas
 
 
@@ -107,7 +115,9 @@ def line_of_sight_projection(gas, angle, center):
         [0, 1, 0],
         [-np.sin(angle), 0, np.cos(angle)],
     ]
-    proj_velocities = np.float32(np.multiply(gas["Velocities"], los_dir).sum(axis=1))
+    proj_velocities = np.float32(
+        np.multiply(gas["Velocities"], los_dir).sum(axis=1)
+    )
     gas["Projected_Velocities"] = proj_velocities
     rot_transformer = R.from_matrix(los_rot_matrix)
     gas["Coordinates"] = rot_transformer.apply(gas["Coordinates"])
@@ -120,7 +130,8 @@ def grid_gas(
     df,
     snap,
     out_only,
-    threshold_velocity=100,
+    threshold_velocity=None,
+    v_esc_ratio=None,
     grid_size=100,
     n_threads=8,
     zoom_in=1,
@@ -141,8 +152,31 @@ def grid_gas(
     gas = retrieve_halo_gas(df, snap, halo_id)
     gal_center = rotate_into_galactic_plane(gas, [gal_center], r_HMR)
     if projection_angle is not None:
-        gal_center = line_of_sight_projection(gas, projection_angle, gal_center)
+        gal_center = line_of_sight_projection(
+            gas, projection_angle, gal_center
+        )
+
     if out_only:
+        if threshold_velocity is None:
+            if v_esc_ratio is not None:
+                select_outflowing_gas(
+                    gas, threshold_velocity=None, v_esc_ratio=v_esc_ratio
+                )
+            else:
+                raise ValueError(
+                    'Either "v_esc_ratio" or "threshold_velocity" have to be not "None"'
+                )
+        else:
+            if v_esc_ratio is None:
+                raise ValueError(
+                    'Either "v_esc_ratio" or "threshold_velocity" have to be "None"'
+                )
+            else:
+                select_outflowing_gas(
+                    gas,
+                    threshold_velocity=threshold_velocity,
+                    v_esc_ratio=None,
+                )
         gas = select_outflowing_gas(gas, threshold_velocity)
 
     quants = [
@@ -153,7 +187,9 @@ def grid_gas(
     if projection_angle is not None:
         quants.append("Projected_Velocities")
     if zoom_in == 1:
-        box_size = r_vir * 2 * float(config["cutout_scale"]) * np.ones(3) / zoom_in
+        box_size = (
+            r_vir * 2 * float(config["cutout_scale"]) * np.ones(3) / zoom_in
+        )
     else:
         box_size = r_vir * 2 * np.ones(3) / zoom_in
     shape = (grid_size * np.ones(3)).astype(np.int64)
@@ -183,5 +219,7 @@ def grid_gas(
     grids["StarFormationRate"] = grid_sfr["StarFormationRate"]
 
     for quant in quants:
-        grids[quant] = np.where(grids["Masses"] != 0, grids[quant] / grids["Masses"], 0)
+        grids[quant] = np.where(
+            grids["Masses"] != 0, grids[quant] / grids["Masses"], 0
+        )
     return grids
