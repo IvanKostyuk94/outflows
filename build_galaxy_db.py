@@ -32,6 +32,7 @@ def get_galaxy_df(sim, snap_num):
         "SubhaloSFR",
         "SubhaloMassType",
         "SubhaloHalfmassRadType",
+        "SubhaloBHMdot",
     ]
     sub_dict = {key: dataset[key] for key in keys_needed}
     dataset_df = utils.dfFromArrDict(sub_dict)
@@ -71,6 +72,7 @@ def reduce_galaxy_df(df):
         Galaxy_vel_x=reduced_df[("SubhaloVel", 0)],
         Galaxy_vel_y=reduced_df[("SubhaloVel", 1)],
         Galaxy_vel_z=reduced_df[("SubhaloVel", 2)],
+        BH_growth=reduced_df[("SubhaloBHMdot", 0)],
     )
     return new_df
 
@@ -92,12 +94,8 @@ def match_with_galaxy(halo_df, galaxy_df):
     halo_df["Halo_id"] = halo_df.index
     halo_df.set_index("Galaxy_id", inplace=True)
     full_df = halo_df.join(galaxy_df, how="inner")
-    full_df["Galaxy_star_fraction"] = (
-        full_df["Galaxy_M_star"] / full_df["Halo_M_star"]
-    )
-    full_df["Galaxy_gas_fraction"] = (
-        full_df["Galaxy_M_gas"] / full_df["Halo_M_gas"]
-    )
+    full_df["Galaxy_star_fraction"] = full_df["Galaxy_M_star"] / full_df["Halo_M_star"]
+    full_df["Galaxy_gas_fraction"] = full_df["Galaxy_M_gas"] / full_df["Halo_M_gas"]
     return full_df
 
 
