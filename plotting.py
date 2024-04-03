@@ -44,15 +44,20 @@ def plot_parameters_comp(prop):
         parameters["vmax"] = 250
 
     elif prop == "Masses":
-        parameters["vmin"] = 6.0
-        parameters["vcenter"] = 8.0
-        parameters["vmax"] = 10.0
+        parameters["vmin"] = 7.0
+        parameters["vcenter"] = 7.75
+        parameters["vmax"] = 8.5
+
+    # elif prop == "Masses":
+    #     parameters["vmin"] = 4.0
+    #     parameters["vcenter"] = 6.0
+    #     parameters["vmax"] = 8.0
 
     elif prop == "GFM_Metallicity":
         parameters["vmin"] = -3.5
         parameters["vcenter"] = -2.5
         parameters["vmax"] = -1.5
-    
+
     elif prop == "Temperature":
         parameters["vmin"] = 4
         parameters["vcenter"] = 5.5
@@ -115,7 +120,7 @@ def get_mass_weighted_image(gas, axis, prop, log=False):
         0,
     )
     if log:
-        image = np.log10(image+1e-20)
+        image = np.log10(image + 1e-20)
     return image
 
 
@@ -131,13 +136,17 @@ def get_prop_image(
 ):
     if prop == "Flow_Velocities":
         if general_image:
-            image = get_mass_weighted_image(gas, axis, prop='Flow_Velocities')
+            image = get_mass_weighted_image(gas, axis, prop="Flow_Velocities")
         else:
             image = get_outflow_image(gas, outflow_only, axis, threshold_vel)
     elif prop == "GFM_Metallicity":
-        image = get_mass_weighted_image(gas, axis, prop='GFM_Metallicity', log=True)
+        image = get_mass_weighted_image(
+            gas, axis, prop="GFM_Metallicity", log=True
+        )
     elif prop == "Temperature":
-        image = get_mass_weighted_image(gas, axis, prop='Temperature', log=True)
+        image = get_mass_weighted_image(
+            gas, axis, prop="Temperature", log=True
+        )
     elif prop == "Masses":
         image = get_surface_densities(gas, box_size, snap, axis)
     elif prop == "StarFormationRate":
@@ -165,7 +174,9 @@ def draw_sizebar(ax, box_size, grid_shape, snap, length_kpc=1):
 
 
 def draw_r_vir_circle(ax, r_vir, grid_shape):
-    pixel_length_com = 2 * float(config["cutout_scale"]) * r_vir / grid_shape[0]
+    pixel_length_com = (
+        2 * float(config["cutout_scale"]) * r_vir / grid_shape[0]
+    )
     r_vir_pix = r_vir / pixel_length_com
     center = grid_shape[0] / 2
     circ = Circle(
@@ -282,7 +293,9 @@ def plot_outflow_comparison(
                 )
                 if with_circle:
                     draw_r_vir_circle(ax, r_vir, image.shape)
-                draw_sizebar(ax, r_vir, image.shape, snap, length_kpc=sizebar_length)
+                draw_sizebar(
+                    ax, r_vir, image.shape, snap, length_kpc=sizebar_length
+                )
                 ax.get_xaxis().set_visible(False)
                 ax.get_yaxis().set_visible(False)
                 if column == 1:
@@ -336,10 +349,10 @@ def plot_prop_maps(
 
     for column in range(4):
         ax = axs[column]
-        if prop == 'Flow_Velocities':
+        if prop == "Flow_Velocities":
             cmap = "coolwarm"
         else:
-            cmap = 'inferno'
+            cmap = "inferno"
         if column < 3:
             image = get_prop_image(
                 gas,
@@ -357,7 +370,9 @@ def plot_prop_maps(
             )
             if with_circle:
                 draw_r_vir_circle(ax, r_vir, image.shape)
-            draw_sizebar(ax, box_size, image.shape, snap, length_kpc=sizebar_length)
+            draw_sizebar(
+                ax, box_size, image.shape, snap, length_kpc=sizebar_length
+            )
             ax.get_xaxis().set_visible(False)
             ax.get_yaxis().set_visible(False)
 
@@ -377,12 +392,28 @@ def plot_prop_maps(
 
 
 def retrieve_prop_maps(
-    halo_id, df, snap, prop, grid_size=100, zoom_in=1, out_only=False
+    halo_id,
+    df,
+    snap,
+    prop,
+    grid_size=100,
+    zoom_in=1,
+    out_only=False,
+    angle=None,
+    v_out_threshold=None,
+    v_esc_ratio=None,
 ):
 
     gas = grid_gas(
-        halo_id, df, snap, out_only=out_only, grid_size=grid_size, zoom_in=zoom_in
+        halo_id,
+        df,
+        snap,
+        out_only=out_only,
+        grid_size=grid_size,
+        zoom_in=zoom_in,
+        projection_angle=angle,
     )
+
     r_vir = float(df[df.Halo_id == halo_id].R_vir)
     if zoom_in != 1:
         with_circle = False
@@ -524,6 +555,7 @@ def plot_outflow_histogram(
         weights=data["masses"],
         alpha=parameters["alpha"],
         range=parameters["range"],
+        log=True,
     )
 
     ax.set_xlabel(parameters["label_x"], size=parameters["labelsize"])
