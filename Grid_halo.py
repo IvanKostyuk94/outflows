@@ -33,13 +33,34 @@ def map_to_new_dict(particles, relevant):
     return rel_particles
 
 
+def get_galaxy_pos(df, halo_id):
+    gal_pos = np.array(
+        [
+            float(df[df.Halo_id == halo_id].Galaxy_pos_x),
+            float(df[df.Halo_id == halo_id].Galaxy_pos_y),
+            float(df[df.Halo_id == halo_id].Galaxy_pos_z),
+        ]
+    )
+    return gal_pos
+
+
+def get_relative_coordinates(gas, gal_pos):
+    return gas["Coordinates"] - gal_pos
+
+
+def get_relative_distances(gas):
+    gas["Relative_Distances"] = np.sqrt(
+        np.sum(np.square(gas["Relative_Coordinates"]), axis=1)
+    )
+    return
+
+
 # Retrieves all particles in a halo and immidiatly adds the outflow velocity
 def retrieve_halo_gas(df, snap, halo_id):
     _, sim_path = get_sim()
     gas = il.snapshot.loadHalo(sim_path, snap, halo_id, "gas")
     z = get_redshift(4)
     gas["Velocities"] = gas["Velocities"] * np.sqrt(scale_factor(z))
-    gas["Potential"] = gas["Potential"] / scale_factor(z)
     galaxy_vel = np.array(
         [
             float(df[df.Halo_id == halo_id].Galaxy_vel_x),
@@ -48,14 +69,8 @@ def retrieve_halo_gas(df, snap, halo_id):
         ]
     )
     gas["Relative_Velocities"] = gas["Velocities"] - galaxy_vel.T
-    galaxy_pos = np.array(
-        [
-            float(df[df.Halo_id == halo_id].Galaxy_pos_x),
-            float(df[df.Halo_id == halo_id].Galaxy_pos_y),
-            float(df[df.Halo_id == halo_id].Galaxy_pos_z),
-        ]
-    )
-    gas["Relative_Coordinates"] = gas["Coordinates"] - galaxy_pos.T
+    galaxy_pos = get_galaxy_pos(df, halo_id)
+    gas["Relative_Coordinates"] = get_relative_coordinates(gas, galaxy_pos)
     gas["Direction"] = (
         gas["Relative_Coordinates"].T
         / np.linalg.norm(gas["Relative_Coordinates"], axis=1)
@@ -70,6 +85,13 @@ def retrieve_halo_gas(df, snap, halo_id):
     return gas
 
 
+def get_halo_gas_potential(df, snap, halo_id):
+    _, sim_path = get_sim()
+    gas = il.snapshot.loadHalo(sim_path, snap, halo_id, "gas")
+    dm = il.snapshot.loadHalo(sim_path, snap, halo_id, "dm")
+    stars = il.snapshot.loadHalo(sim_path, snap, halo_id, "stars")
+
+
 # Threshold velocities should be provided as absolute velocities in km/s
 def select_outflowing_gas(gas, threshold_velocity=None, v_esc_ratio=None):
     if gas["count"] == 0:
@@ -80,7 +102,7 @@ def select_outflowing_gas(gas, threshold_velocity=None, v_esc_ratio=None):
         else:
             idces_rel_gas = (
                 0.5 * gas["Flow_Velocities"] ** 2
-                > v_esc_ratio * gas["Potential"]
+                > v_esc_ratio * gas["True_Potential"]
             )
         rel_gas = map_to_new_dict(gas, idces_rel_gas)
 
@@ -168,15 +190,16 @@ def grid_gas(
                 )
         else:
             if v_esc_ratio is None:
-                raise ValueError(
-                    'Either "v_esc_ratio" or "threshold_velocity" have to be "None"'
-                )
-            else:
                 select_outflowing_gas(
                     gas,
                     threshold_velocity=threshold_velocity,
                     v_esc_ratio=None,
                 )
+            else:
+                raise ValueError(
+                    'Either "v_esc_ratio" or "threshold_velocity" have to be "None"'
+                )
+
         gas = select_outflowing_gas(gas, threshold_velocity)
 
     quants = [
