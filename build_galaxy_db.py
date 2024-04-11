@@ -94,8 +94,12 @@ def match_with_galaxy(halo_df, galaxy_df):
     halo_df["Halo_id"] = halo_df.index
     halo_df.set_index("Galaxy_id", inplace=True)
     full_df = halo_df.join(galaxy_df, how="inner")
-    full_df["Galaxy_star_fraction"] = full_df["Galaxy_M_star"] / full_df["Halo_M_star"]
-    full_df["Galaxy_gas_fraction"] = full_df["Galaxy_M_gas"] / full_df["Halo_M_gas"]
+    full_df["Galaxy_star_fraction"] = (
+        full_df["Galaxy_M_star"] / full_df["Halo_M_star"]
+    )
+    full_df["Galaxy_gas_fraction"] = (
+        full_df["Galaxy_M_gas"] / full_df["Halo_M_gas"]
+    )
     return full_df
 
 
