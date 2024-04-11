@@ -1,11 +1,20 @@
-from utils import get_sim, get_redshift, scale_factor
+from utils import (
+    get_sim,
+    get_redshift,
+    scale_factor,
+    get_dm_mass,
+    get_mass_in_kg,
+    get_dist_in_km,
+)
 import illustris_python as il
 from pyTNG import gridding, gas_temperature
-import pandas as pd
 import numpy as np
 from config import config
 from sklearn.decomposition import PCA
 from scipy.spatial.transform import Rotation as R
+from astropy.constants import G
+from astropy import units as u
+from scipy.integrate import cumtrapz
 
 
 # Corrects the particle dictionary to only contain the particles in relevant
@@ -45,7 +54,8 @@ def get_galaxy_pos(df, halo_id):
 
 
 def get_relative_coordinates(gas, gal_pos):
-    return gas["Coordinates"] - gal_pos
+    gas["Relative_Coordinates"] = gas["Coordinates"] - gal_pos
+    return
 
 
 def get_relative_distances(gas):
@@ -57,8 +67,9 @@ def get_relative_distances(gas):
 
 # Retrieves all particles in a halo and immidiatly adds the outflow velocity
 def retrieve_halo_gas(df, snap, halo_id):
-    _, sim_path = get_sim()
-    gas = il.snapshot.loadHalo(sim_path, snap, halo_id, "gas")
+    # _, sim_path = get_sim()
+    # gas = il.snapshot.loadHalo(sim_path, snap, halo_id, "gas")
+    gas = get_gas_v_esc(df, snap, halo_id)
     z = get_redshift(4)
     gas["Velocities"] = gas["Velocities"] * np.sqrt(scale_factor(z))
     galaxy_vel = np.array(
@@ -70,7 +81,7 @@ def retrieve_halo_gas(df, snap, halo_id):
     )
     gas["Relative_Velocities"] = gas["Velocities"] - galaxy_vel.T
     galaxy_pos = get_galaxy_pos(df, halo_id)
-    gas["Relative_Coordinates"] = get_relative_coordinates(gas, galaxy_pos)
+    get_relative_coordinates(gas, galaxy_pos)
     gas["Direction"] = (
         gas["Relative_Coordinates"].T
         / np.linalg.norm(gas["Relative_Coordinates"], axis=1)
@@ -85,11 +96,85 @@ def retrieve_halo_gas(df, snap, halo_id):
     return gas
 
 
-def get_halo_gas_potential(df, snap, halo_id):
+def calculate_acc(mass, dist_km):
+    G_correct = G.to(u.km**3 / u.kg / u.s**2).value
+    g = -1 * G_correct * get_mass_in_kg(mass) / dist_km**2
+    return g
+
+
+def sort_all_keys(particles, sort_key):
+    sorted_idces = np.argsort(particles[sort_key])
+    for key in particles.keys():
+        sorted_array = particles[key][sorted_idces]
+        particles[key] = sorted_array
+    return
+
+
+def get_gas_v_esc(df, snap, halo_id):
     _, sim_path = get_sim()
     gas = il.snapshot.loadHalo(sim_path, snap, halo_id, "gas")
     dm = il.snapshot.loadHalo(sim_path, snap, halo_id, "dm")
     stars = il.snapshot.loadHalo(sim_path, snap, halo_id, "stars")
+    halo_particles = [gas, dm, stars]
+    tot_num = np.sum(particles["count"] for particles in halo_particles)
+    gal_center = get_galaxy_pos(df, halo_id)
+    all_particles = {}
+    all_particles["Masses"] = np.empty(tot_num)
+    all_particles["Relative_Distances"] = np.empty(tot_num)
+    all_particles["Numbering"] = np.empty(tot_num)
+
+    for i, particles in enumerate(halo_particles):
+        if i == 0:
+            start = 0
+        else:
+            start = start + halo_particles[i - 1]["count"]
+        end = particles["count"] + start
+        print(end)
+        get_relative_coordinates(particles, gal_center)
+        get_relative_distances(particles)
+        if "Masses" in particles.keys():
+            all_particles["Masses"][start:end] = particles["Masses"]
+        else:
+            dm_mass = get_dm_mass(snap)
+            all_particles["Masses"][start:end] = dm_mass * np.ones(
+                particles["count"]
+            )
+        all_particles["Relative_Distances"][start:end] = particles[
+            "Relative_Distances"
+        ]
+        particles["Numbering"] = np.arange(start, end)
+        all_particles["Numbering"][start:end] = particles["Numbering"]
+
+    sort_all_keys(particles=all_particles, sort_key="Relative_Distances")
+
+    all_particles["Masses_Cum"] = np.cumsum(all_particles["Masses"])
+    z = get_redshift(snap)
+    all_particles["Relative_Distances_km"] = get_dist_in_km(
+        all_particles["Relative_Distances"], z
+    )
+    all_particles["Grav_acc"] = calculate_acc(
+        all_particles["Masses_Cum"], all_particles["Relative_Distances_km"]
+    )
+    all_particles["Grav_pot"] = cumtrapz(
+        all_particles["Grav_acc"],
+        x=all_particles["Relative_Distances_km"],
+        initial=0,
+    )
+    all_particles["v_esc"] = np.sqrt(
+        all_particles["Grav_pot"]
+        - all_particles["Grav_acc"][-1]
+        * all_particles["Relative_Distances_km"][-1]
+        - all_particles["Grav_pot"][-1]
+    )
+
+    sort_all_keys(particles=all_particles, sort_key="Numbering")
+
+    gas_indices = np.where(
+        np.isin(all_particles["Numbering"], gas["Numbering"])
+    )[0]
+
+    gas["v_esc"] = all_particles["v_esc"][gas_indices]
+    return gas
 
 
 # Threshold velocities should be provided as absolute velocities in km/s
