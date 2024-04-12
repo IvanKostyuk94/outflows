@@ -15,6 +15,7 @@ from scipy.spatial.transform import Rotation as R
 from astropy.constants import G
 from astropy import units as u
 from scipy.integrate import cumtrapz
+from gaussian_outflow_selection import group_gas
 
 
 # Corrects the particle dictionary to only contain the particles in relevant
@@ -80,6 +81,9 @@ def retrieve_halo_gas(df, snap, halo_id):
         ]
     )
     gas["Relative_Velocities"] = gas["Velocities"] - galaxy_vel.T
+    gas["Relative_Velocities_abs"] = np.linalg.norm(
+        gas["Relative_Velocities"], axis=1
+    )
     galaxy_pos = get_galaxy_pos(df, halo_id)
     get_relative_coordinates(gas, galaxy_pos)
     gas["Direction"] = (
@@ -129,7 +133,6 @@ def get_gas_v_esc(df, snap, halo_id):
         else:
             start = start + halo_particles[i - 1]["count"]
         end = particles["count"] + start
-        print(end)
         get_relative_coordinates(particles, gal_center)
         get_relative_distances(particles)
         if "Masses" in particles.keys():
@@ -186,11 +189,18 @@ def select_outflowing_gas(gas, threshold_velocity=None, v_esc_ratio=None):
             idces_rel_gas = gas["Flow_Velocities"] > threshold_velocity
         else:
             idces_rel_gas = (
-                0.5 * gas["Flow_Velocities"] ** 2
-                > v_esc_ratio * gas["True_Potential"]
+                gas["Relative_Velocities_abs"] > v_esc_ratio * gas["v_esc"]
             )
         rel_gas = map_to_new_dict(gas, idces_rel_gas)
+    return rel_gas
 
+
+def select_gas_group(gas, group_num):
+    if gas["count"] == 0:
+        return gas
+    else:
+        idces_rel_gas = gas["group"] == group_num
+        rel_gas = map_to_new_dict(gas, idces_rel_gas)
     return rel_gas
 
 
@@ -232,6 +242,33 @@ def line_of_sight_projection(gas, angle, center):
     return center
 
 
+def get_gridded(gas, quants, grid_shape, grid_size, grid_cen, n_threads):
+    grids = gridding.depositParticlesOnGrid(
+        gas_parts=gas,
+        method="sphKernelDep",
+        quants=quants,
+        box_size_parts=[0, 0, 0],
+        grid_shape=grid_shape,
+        grid_size=grid_size,
+        grid_cen=grid_cen,
+        n_threads=n_threads,
+    )
+
+    grid_sfr = gridding.depositParticlesOnGrid(
+        gas_parts=gas,
+        method="sphKernelDep",
+        quants=[],
+        box_size_parts=[0, 0, 0],
+        grid_shape=grid_shape,
+        grid_size=grid_size,
+        grid_cen=grid_cen,
+        n_threads=n_threads,
+        mass_key="StarFormationRate",
+    )
+    grids["StarFormationRate"] = grid_sfr["StarFormationRate"]
+    return grids
+
+
 def grid_gas(
     halo_id,
     df,
@@ -243,6 +280,7 @@ def grid_gas(
     n_threads=8,
     zoom_in=1,
     projection_angle=None,
+    grouped_selection=False,
 ):
     idx = halo_id
     halo_id = idx
@@ -257,6 +295,8 @@ def grid_gas(
     r_HMR = float(df[df.Halo_id == halo_id].Galaxy_HMR)
 
     gas = retrieve_halo_gas(df, snap, halo_id)
+    if grouped_selection:
+        group_gas(gas)
     gal_center = rotate_into_galactic_plane(gas, [gal_center], r_HMR)
     if projection_angle is not None:
         gal_center = line_of_sight_projection(
@@ -266,7 +306,7 @@ def grid_gas(
     if out_only:
         if threshold_velocity is None:
             if v_esc_ratio is not None:
-                select_outflowing_gas(
+                gas = select_outflowing_gas(
                     gas, threshold_velocity=None, v_esc_ratio=v_esc_ratio
                 )
             else:
@@ -275,7 +315,7 @@ def grid_gas(
                 )
         else:
             if v_esc_ratio is None:
-                select_outflowing_gas(
+                gas = select_outflowing_gas(
                     gas,
                     threshold_velocity=threshold_velocity,
                     v_esc_ratio=None,
@@ -285,7 +325,7 @@ def grid_gas(
                     'Either "v_esc_ratio" or "threshold_velocity" have to be "None"'
                 )
 
-        gas = select_outflowing_gas(gas, threshold_velocity)
+        # gas = select_outflowing_gas(gas, threshold_velocity)
 
     quants = [
         "Temperature",
@@ -302,32 +342,37 @@ def grid_gas(
         box_size = r_vir * 2 * np.ones(3) / zoom_in
     shape = (grid_size * np.ones(3)).astype(np.int64)
     grid_cen = gal_center
-    grids = gridding.depositParticlesOnGrid(
-        gas_parts=gas,
-        method="sphKernelDep",
-        quants=quants,
-        box_size_parts=[0, 0, 0],
-        grid_shape=shape,
-        grid_size=box_size,
-        grid_cen=grid_cen,
-        n_threads=n_threads,
-    )
-
-    grid_sfr = gridding.depositParticlesOnGrid(
-        gas_parts=gas,
-        method="sphKernelDep",
-        quants=[],
-        box_size_parts=[0, 0, 0],
-        grid_shape=shape,
-        grid_size=box_size,
-        grid_cen=grid_cen,
-        n_threads=n_threads,
-        mass_key="StarFormationRate",
-    )
-    grids["StarFormationRate"] = grid_sfr["StarFormationRate"]
-
-    for quant in quants:
-        grids[quant] = np.where(
-            grids["Masses"] != 0, grids[quant] / grids["Masses"], 0
+    if group_gas is False:
+        grids = get_gridded(
+            gas=gas,
+            quants=quants,
+            grid_shape=shape,
+            grid_size=box_size,
+            grid_cen=grid_cen,
+            n_threads=n_threads,
         )
-    return grids
+        for quant in quants:
+            grids[quant] = np.where(
+                grids["Masses"] != 0, grids[quant] / grids["Masses"], 0
+            )
+        return grids
+    else:
+        all_grids = []
+        for i in range(np.max(gas["group"])):
+            gas_group = select_gas_group(gas, i + 1)
+            group_grids = get_gridded(
+                gas=gas_group,
+                quants=quants,
+                grid_shape=shape,
+                grid_size=box_size,
+                grid_cen=grid_cen,
+                n_threads=n_threads,
+            )
+            for quant in quants:
+                group_grids[quant] = np.where(
+                    group_grids["Masses"] != 0,
+                    group_grids[quant] / group_grids["Masses"],
+                    0,
+                )
+            all_grids.append(group_grids)
+        return all_grids
