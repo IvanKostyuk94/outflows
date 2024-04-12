@@ -43,15 +43,15 @@ def plot_parameters_comp(prop):
         parameters["vcenter"] = 0
         parameters["vmax"] = 250
 
-    elif prop == "Masses":
-        parameters["vmin"] = 7.0
-        parameters["vcenter"] = 7.75
-        parameters["vmax"] = 8.5
-
     # elif prop == "Masses":
-    #     parameters["vmin"] = 4.0
-    #     parameters["vcenter"] = 6.0
-    #     parameters["vmax"] = 8.0
+    #     parameters["vmin"] = 7.0
+    #     parameters["vcenter"] = 7.75
+    #     parameters["vmax"] = 8.5
+
+    elif prop == "Masses":
+        parameters["vmin"] = 4.0
+        parameters["vcenter"] = 6.0
+        parameters["vmax"] = 8.0
 
     elif prop == "GFM_Metallicity":
         parameters["vmin"] = -3.5
@@ -95,14 +95,8 @@ def get_sfr_densities(gas, box_size, snap, ax):
     return surface_dens
 
 
-def get_outflow_image(gas, outflow_only, axis, threshold_vel):
-    if outflow_only:
-        data = gas["Flow_Velocities"]
-    else:
-        data = np.where(
-            gas["Flow_Velocities"] > threshold_vel, gas["Flow_Velocities"], 0
-        )
-
+def get_outflow_image(gas, axis):
+    data = gas["Flow_Velocities"]
     image = np.where(
         (data != 0).sum(axis) != 0,
         np.true_divide(data.sum(axis), (data != 0).sum(axis)),
@@ -128,8 +122,6 @@ def get_prop_image(
     gas,
     prop,
     axis,
-    outflow_only=None,
-    threshold_vel=None,
     snap=None,
     box_size=None,
     general_image=False,
@@ -138,7 +130,7 @@ def get_prop_image(
         if general_image:
             image = get_mass_weighted_image(gas, axis, prop="Flow_Velocities")
         else:
-            image = get_outflow_image(gas, outflow_only, axis, threshold_vel)
+            image = get_outflow_image(gas, axis)
     elif prop == "GFM_Metallicity":
         image = get_mass_weighted_image(
             gas, axis, prop="GFM_Metallicity", log=True
@@ -320,7 +312,7 @@ def plot_outflow_comparison(
 
 
 def plot_prop_maps(
-    gas, r_vir, prop, snap, with_circle, box_size, sizebar_length, out_only
+    gas, r_vir, prop, snap, with_circle, box_size, sizebar_length
 ):
     parameters = plot_parameters_comp(prop)
 
@@ -360,7 +352,6 @@ def plot_prop_maps(
                 snap=snap,
                 axis=column,
                 box_size=box_size,
-                outflow_only=out_only,
                 general_image=True,
             )
             subfig = ax.pcolormesh(
@@ -387,7 +378,6 @@ def plot_prop_maps(
                 horizontal=False,
                 prop=prop,
             )
-
     return
 
 
@@ -409,6 +399,8 @@ def retrieve_prop_maps(
         df,
         snap,
         out_only=out_only,
+        threshold_velocity=v_out_threshold,
+        v_esc_ratio=v_esc_ratio,
         grid_size=grid_size,
         zoom_in=zoom_in,
         projection_angle=angle,
@@ -424,8 +416,41 @@ def retrieve_prop_maps(
         box_size = r_vir * 2 / zoom_in
         sizebar_length = 10
     plot_prop_maps(
-        gas, r_vir, prop, snap, with_circle, box_size, sizebar_length, out_only
+        gas, r_vir, prop, snap, with_circle, box_size, sizebar_length
     )
+    return
+
+
+def plot_prop_maps_grouped(
+    halo_id, df, snap, prop, grid_size=100, zoom_in=1, angle=None
+):
+
+    gases = grid_gas(
+        halo_id,
+        df,
+        snap,
+        out_only=False,
+        threshold_velocity=None,
+        v_esc_ratio=None,
+        grid_size=grid_size,
+        zoom_in=zoom_in,
+        projection_angle=angle,
+        grouped_selection=True,
+    )
+
+    r_vir = float(df[df.Halo_id == halo_id].R_vir)
+    if zoom_in != 1:
+        with_circle = False
+        box_size = r_vir * 2 * float(config["cutout_scale"]) / zoom_in
+        sizebar_length = 1
+    else:
+        with_circle = True
+        box_size = r_vir * 2 / zoom_in
+        sizebar_length = 10
+    for gas in gases:
+        plot_prop_maps(
+            gas, r_vir, prop, snap, with_circle, box_size, sizebar_length
+        )
     return
 
 
