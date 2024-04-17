@@ -10,6 +10,7 @@ from matplotlib import colormaps
 from matplotlib.patches import Circle
 
 from Grid_halo import grid_gas, retrieve_halo_gas
+from gaussian_outflow_selection import group_gas
 
 
 def prop_labels(prop):
@@ -43,15 +44,15 @@ def plot_parameters_comp(prop):
         parameters["vcenter"] = 0
         parameters["vmax"] = 250
 
-    # elif prop == "Masses":
-    #     parameters["vmin"] = 7.0
-    #     parameters["vcenter"] = 7.75
-    #     parameters["vmax"] = 8.5
-
     elif prop == "Masses":
-        parameters["vmin"] = 4.0
-        parameters["vcenter"] = 6.0
-        parameters["vmax"] = 8.0
+        parameters["vmin"] = 7.0
+        parameters["vcenter"] = 8.5
+        parameters["vmax"] = 10
+
+    # elif prop == "Masses":
+    #     parameters["vmin"] = 4.0
+    #     parameters["vcenter"] = 6.0
+    #     parameters["vmax"] = 8.0
 
     elif prop == "GFM_Metallicity":
         parameters["vmin"] = -3.5
@@ -60,8 +61,8 @@ def plot_parameters_comp(prop):
 
     elif prop == "Temperature":
         parameters["vmin"] = 4
-        parameters["vcenter"] = 5.5
-        parameters["vmax"] = 7
+        parameters["vcenter"] = 6.0
+        parameters["vmax"] = 8
 
     elif prop == "StarFormationRate":
         parameters["vmin"] = -3
@@ -422,7 +423,15 @@ def retrieve_prop_maps(
 
 
 def plot_prop_maps_grouped(
-    halo_id, df, snap, prop, grid_size=100, zoom_in=1, angle=None
+    halo_id,
+    df,
+    snap,
+    props,
+    grid_size=100,
+    zoom_in=1,
+    angle=None,
+    group_props=["Flow_Velocities"],
+    n_peak=None,
 ):
 
     gases = grid_gas(
@@ -436,6 +445,8 @@ def plot_prop_maps_grouped(
         zoom_in=zoom_in,
         projection_angle=angle,
         grouped_selection=True,
+        group_props=group_props,
+        n_peak=n_peak,
     )
 
     r_vir = float(df[df.Halo_id == halo_id].R_vir)
@@ -447,10 +458,11 @@ def plot_prop_maps_grouped(
         with_circle = True
         box_size = r_vir * 2 / zoom_in
         sizebar_length = 10
-    for gas in gases:
-        plot_prop_maps(
-            gas, r_vir, prop, snap, with_circle, box_size, sizebar_length
-        )
+    for prop in props:
+        for gas in gases:
+            plot_prop_maps(
+                gas, r_vir, prop, snap, with_circle, box_size, sizebar_length
+            )
     return
 
 
@@ -538,7 +550,7 @@ def parameters_histogram():
     return parameters
 
 
-def get_outflow_velocities(df, snap, idces):
+def get_outflow_velocities(df, snap, idces, grouped=False, peaks=None):
     data = {}
     data["outflow_velocities"] = np.array([])
     data["masses"] = np.array([])
@@ -548,17 +560,26 @@ def get_outflow_velocities(df, snap, idces):
             data["outflow_velocities"], gas["Flow_Velocities"]
         )
         data["masses"] = np.append(data["masses"], gas["Masses"])
+        if grouped:
+            if len(idces) > 1:
+                raise NotImplementedError(
+                    "Cannot created grouped histogram for several galaxies"
+                )
+            else:
+                _ = group_gas(
+                    gas, props=["Flow_Velocities"], peak_number=peaks
+                )
+        data["group"] = gas["group"]
     return data
 
 
 def plot_outflow_histogram(
-    df,
-    idces,
-    snap,
-    bins=100,
+    df, idces, snap, bins=100, grouped=False, peaks=None
 ):
     parameters = parameters_histogram()
-    data = get_outflow_velocities(df, snap, idces)
+    data = get_outflow_velocities(
+        df, snap, idces, grouped=grouped, peaks=peaks
+    )
 
     figsize = (parameters["fig_width"], parameters["fig_height"])
 
@@ -572,16 +593,34 @@ def plot_outflow_histogram(
         width=parameters["tick_minor_width"],
         which="minor",
     )
-    ax.set_title(parameters["title"], size=parameters["titlesize"])
-    ax.hist(
-        data["outflow_velocities"],
-        bins=bins,
-        density=True,
-        weights=data["masses"],
-        alpha=parameters["alpha"],
-        range=parameters["range"],
-        log=True,
-    )
+    # ax.set_title(parameters["title"], size=parameters["titlesize"])
+    if grouped:
+        for i in range(np.max(data["group"] + 1)):
+            norm = np.sum(data["group"] == i) / len(data["group"])
+            height, bins = np.histogram(
+                data["outflow_velocities"][data["group"] == i],
+                bins=bins,
+                density=True,
+                weights=data["masses"][data["group"] == i],
+                # alpha=parameters["alpha"],
+                range=parameters["range"],
+                # log=False,
+            )
+            bincentres = [
+                (bins[i] + bins[i + 1]) / 2.0 for i in range(len(bins) - 1)
+            ]
+            plt.bar(bincentres, height * norm, width=bins[1:] - bins[:-1])
+
+    else:
+        ax.hist(
+            data["outflow_velocities"],
+            bins=bins,
+            density=True,
+            weights=data["masses"],
+            alpha=parameters["alpha"],
+            range=parameters["range"],
+            log=False,
+        )
 
     ax.set_xlabel(parameters["label_x"], size=parameters["labelsize"])
     ax.set_ylabel(parameters["label_y"], size=parameters["labelsize"])
