@@ -90,6 +90,7 @@ def retrieve_halo_gas(df, snap, halo_id):
         gas["Relative_Coordinates"].T
         / np.linalg.norm(gas["Relative_Coordinates"], axis=1)
     ).T
+    # >0 means outflow, <0 means infall
     gas["Flow_Velocities"] = np.float32(
         np.multiply(gas["Relative_Velocities"], gas["Direction"]).sum(axis=1)
     )
@@ -164,10 +165,13 @@ def get_gas_v_esc(df, snap, halo_id):
         initial=0,
     )
     all_particles["v_esc"] = np.sqrt(
-        all_particles["Grav_pot"]
-        - all_particles["Grav_acc"][-1]
-        * all_particles["Relative_Distances_km"][-1]
-        - all_particles["Grav_pot"][-1]
+        2
+        * (
+            all_particles["Grav_pot"]
+            - all_particles["Grav_acc"][-1]
+            * all_particles["Relative_Distances_km"][-1]
+            - all_particles["Grav_pot"][-1]
+        )
     )
 
     sort_all_keys(particles=all_particles, sort_key="Numbering")
@@ -190,7 +194,7 @@ def select_outflowing_gas(gas, threshold_velocity=None, v_esc_ratio=None):
         else:
             idces_rel_gas = (
                 gas["Relative_Velocities_abs"] > v_esc_ratio * gas["v_esc"]
-            )
+            ) & (gas["Flow_Velocities"] > 0)
         rel_gas = map_to_new_dict(gas, idces_rel_gas)
     return rel_gas
 
@@ -281,6 +285,8 @@ def grid_gas(
     zoom_in=1,
     projection_angle=None,
     grouped_selection=False,
+    group_props=["Flow_Velocities"],
+    n_peak=None,
 ):
     idx = halo_id
     halo_id = idx
@@ -296,7 +302,7 @@ def grid_gas(
 
     gas = retrieve_halo_gas(df, snap, halo_id)
     if grouped_selection:
-        group_gas(gas)
+        group_gas(gas, props=group_props, peak_number=n_peak)
     gal_center = rotate_into_galactic_plane(gas, [gal_center], r_HMR)
     if projection_angle is not None:
         gal_center = line_of_sight_projection(
@@ -342,7 +348,7 @@ def grid_gas(
         box_size = r_vir * 2 * np.ones(3) / zoom_in
     shape = (grid_size * np.ones(3)).astype(np.int64)
     grid_cen = gal_center
-    if group_gas is False:
+    if grouped_selection is False:
         grids = get_gridded(
             gas=gas,
             quants=quants,
@@ -358,8 +364,8 @@ def grid_gas(
         return grids
     else:
         all_grids = []
-        for i in range(np.max(gas["group"])):
-            gas_group = select_gas_group(gas, i + 1)
+        for i in range(np.max(gas["group"]) + 1):
+            gas_group = select_gas_group(gas, i)
             group_grids = get_gridded(
                 gas=gas_group,
                 quants=quants,
