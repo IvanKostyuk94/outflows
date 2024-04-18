@@ -94,6 +94,9 @@ def retrieve_halo_gas(df, snap, halo_id):
     gas["Flow_Velocities"] = np.float32(
         np.multiply(gas["Relative_Velocities"], gas["Direction"]).sum(axis=1)
     )
+    gas["Rot_Velocities"] = np.sqrt(
+        gas["Relative_Velocities_abs"] ** 2 - gas["Flow_Velocities"] ** 2
+    )
     gas_temperature.gasTemp(gas)
     gas["hsml"] = 2.5 * (
         3 * (gas["Masses"] / gas["Density"]) / (4.0 * np.pi)
