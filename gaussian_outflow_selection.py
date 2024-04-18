@@ -28,6 +28,23 @@ def get_opt_bic(data, min_number, max_number):
     return opt_bic, bics, counters
 
 
+def normalize(data, key):
+    lin_data = ["Flow_Velocities", "Rot_Velocities"]
+    log_data = ["Coordinates", "Temperature", "StarFormationRate"]
+    if key in log_data:
+        # Add regulator to data to avoid values of -inf
+        data = np.log(data + np.min(np.abs(data)) / 1e5)
+    elif key in lin_data:
+        pass
+    else:
+        raise NotImplementedError(
+            f"Normalization for {key} is not implemented yet."
+        )
+
+    normalized = (data - np.min(data)) / (np.max(data) - np.min(data))
+    return normalized
+
+
 def get_data(gas, keys):
     if len(keys) == 1:
         data = gas[keys[0]]
@@ -36,10 +53,10 @@ def get_data(gas, keys):
         data = []
         for key in keys:
             if gas[key].ndim == 1:
-                data.append(gas[key])
+                data.append(normalize(gas[key], key))
             elif gas[key].ndim == 2:
                 for i in range(gas[key].shape[1]):
-                    data.append(gas[key][:, i])
+                    data.append(normalize(gas[key][:, i], key))
             else:
                 raise NotImplementedError(
                     f"Can't handle data with dim {gas[key].ndim}"
