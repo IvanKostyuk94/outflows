@@ -2,6 +2,7 @@
 
 base_path : "/ptmp/mpa/ivkos/outflows"
 tng_datapath: "/virgotng/universe/IllustrisTNG/"
+merger_history_path : "/virgotng/universe/IllustrisTNG/L35n2160TNG/postprocessing/trees/SubLink_gal/tree_extended.hdf5"
 
 # Directory prefixes where dataframes will be stored should get the snap number attached
 dir_prefix : 'snap_'
