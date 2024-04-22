@@ -394,6 +394,14 @@ def retrieve_prop_maps(
     v_out_threshold=None,
     v_esc_ratio=None,
 ):
+    if zoom_in == "autozoom":
+        zoom_in = int(
+            np.ceil(
+                df[df.Halo_id == halo_id].R_vir
+                / df[df.Halo_id == halo_id].Galaxy_HMR
+                / 20
+            )
+        )
 
     gas = grid_gas(
         halo_id,
@@ -433,6 +441,14 @@ def plot_prop_maps_grouped(
     group_props=["Flow_Velocities"],
     n_peak=None,
 ):
+    if zoom_in == "autozoom":
+        zoom_in = int(
+            np.ceil(
+                df[df.Halo_id == halo_id].R_vir
+                / df[df.Halo_id == halo_id].Galaxy_HMR
+                / 20
+            )
+        )
 
     gases = grid_gas(
         halo_id,
