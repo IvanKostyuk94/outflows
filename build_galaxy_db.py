@@ -4,7 +4,7 @@ import pandas as pd
 import pyTNG.utils as utils
 from pyTNG.cosmology import TNGcosmo
 from config import config
-from utils import get_sim
+from utils import get_sim, get_snap_name
 
 h = TNGcosmo.h
 
@@ -120,4 +120,43 @@ def generate_database(snap):
     save_path = os.path.join(dir_path, df_name)
     full_df = build_full_df(snap)
     full_df.to_hdf(save_path, "galaxies")
+    return
+
+
+def merge_data_bases(
+    snap_min,
+    snap_max,
+    df_name,
+):
+    base_path = config["base_path"]
+    destination_path = os.path.join(base_path, df_name + config["hdf_ending"])
+    for snap in range(snap_min, snap_max + 1):
+        dir = config["dir_prefix"] + str(snap)
+        df_name = config["df_name"] + str(snap) + config["hdf_ending"]
+        origin_path = os.path.join(base_path, dir, df_name)
+        df = pd.read_hdf(origin_path)
+
+        if snap == snap_min:
+            df_dict = {}
+            for key in df.columns:
+                df_dict[key] = list(df[key].copy())
+            df_dict["snap"] = list((np.ones(len(df)) * snap).astype(int))
+            df_dict["idx"] = list(df.index)
+
+        else:
+            for key in df.columns:
+                try:
+                    df_dict[key].extend(list(df[key].copy()))
+                except:
+                    # del df_dict[key]
+                    # continue
+                    # Just for debugging
+                    print(key)
+                    print(snap)
+                    print(f"{key} will be dropped from this dataframe")
+            df_dict["snap"].extend((np.ones(len(df)) * snap).astype(int))
+            df_dict["idx"].extend(df.index)
+
+    full_df = pd.DataFrame.from_dict(df_dict)
+    full_df.to_hdf(destination_path, "galaxies")
     return
