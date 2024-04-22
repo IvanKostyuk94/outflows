@@ -39,7 +39,7 @@ def get_progenitor_history(
     id_array = np.array(history["SubhaloIDRaw"])
     progenitor_idxs = np.array(history["SubhaloID"])
 
-    galaxy_idces = [galaxy_idx]
+    galaxy_idces = [int(galaxy_idx)]
     snap_nums = [snap_num]
 
     while galaxy_idx is not None:
