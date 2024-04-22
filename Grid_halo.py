@@ -276,6 +276,19 @@ def get_gridded(gas, quants, grid_shape, grid_size, grid_cen, n_threads):
     return grids
 
 
+def cut_zoomed(gas, r_vir, zoom_in):
+    max_r = r_vir / zoom_in * np.sqrt(3)
+    relevant_gas = np.linalg.norm(gas["Relative_Coordinates"], axis=1) < max_r
+    selected_gas = map_to_new_dict(gas, relevant_gas)
+    return selected_gas
+
+
+def rot_preselection(gas, crit_ratio=0.5):
+    relevant_gas = gas["Flow_Velocities"] / gas["Rot_Velocities"] > crit_ratio
+    selected_gas = map_to_new_dict(gas, relevant_gas)
+    return selected_gas
+
+
 def grid_gas(
     halo_id,
     df,
@@ -304,7 +317,11 @@ def grid_gas(
     r_HMR = float(df[df.Halo_id == halo_id].Galaxy_HMR)
 
     gas = retrieve_halo_gas(df, snap, halo_id)
+    gas = cut_zoomed(gas=gas, r_vir=r_vir, zoom_in=zoom_in)
     if grouped_selection:
+        gas = select_outflowing_gas(
+            gas, threshold_velocity=0, v_esc_ratio=None
+        )
         group_gas(gas, props=group_props, peak_number=n_peak)
     gal_center = rotate_into_galactic_plane(gas, [gal_center], r_HMR)
     if projection_angle is not None:
@@ -313,6 +330,7 @@ def grid_gas(
         )
 
     if out_only:
+        gas = rot_preselection(gas)
         if threshold_velocity is None:
             if v_esc_ratio is not None:
                 gas = select_outflowing_gas(
