@@ -9,7 +9,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib import colormaps
 from matplotlib.patches import Circle
 
-from Grid_halo import grid_gas, retrieve_halo_gas
+from Grid_halo import grid_gas, retrieve_halo_gas, get_halo
 from gaussian_outflow_selection import group_gas
 
 
@@ -394,14 +394,9 @@ def retrieve_prop_maps(
     v_out_threshold=None,
     v_esc_ratio=None,
 ):
+    halo = get_halo(df, snap, halo_id)
     if zoom_in == "autozoom":
-        zoom_in = int(
-            np.ceil(
-                df[df.Halo_id == halo_id].R_vir
-                / df[df.Halo_id == halo_id].Galaxy_HMR
-                / 20
-            )
-        )
+        zoom_in = int(np.ceil(halo.R_vir / halo.Galaxy_HMR / 20))
 
     gas = grid_gas(
         halo_id,
@@ -415,7 +410,7 @@ def retrieve_prop_maps(
         projection_angle=angle,
     )
 
-    r_vir = float(df[df.Halo_id == halo_id].R_vir)
+    r_vir = float(halo.R_vir)
     if zoom_in != 1:
         with_circle = False
         box_size = r_vir * 2 * float(config["cutout_scale"]) / zoom_in

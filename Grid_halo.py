@@ -43,12 +43,12 @@ def map_to_new_dict(particles, relevant):
     return rel_particles
 
 
-def get_galaxy_pos(df, halo_id):
+def get_galaxy_pos(halo):
     gal_pos = np.array(
         [
-            float(df[df.Halo_id == halo_id].Galaxy_pos_x),
-            float(df[df.Halo_id == halo_id].Galaxy_pos_y),
-            float(df[df.Halo_id == halo_id].Galaxy_pos_z),
+            float(halo.Galaxy_pos_x),
+            float(halo.Galaxy_pos_y),
+            float(halo.Galaxy_pos_z),
         ]
     )
     return gal_pos
@@ -66,6 +66,14 @@ def get_relative_distances(gas):
     return
 
 
+def get_halo(df, snap, halo_id):
+    if "snap" in df.keys():
+        halo = df[(df.Halo_id == halo_id) & (df.snap == snap)]
+    else:
+        halo = df[df.Halo_id == halo_id]
+    return halo
+
+
 # Retrieves all particles in a halo and immidiatly adds the outflow velocity
 def retrieve_halo_gas(df, snap, halo_id):
     # _, sim_path = get_sim()
@@ -73,18 +81,21 @@ def retrieve_halo_gas(df, snap, halo_id):
     gas = get_gas_v_esc(df, snap, halo_id)
     z = get_redshift(4)
     gas["Velocities"] = gas["Velocities"] * np.sqrt(scale_factor(z))
+
+    halo = get_halo(df, snap, halo_id)
+
     galaxy_vel = np.array(
         [
-            float(df[df.Halo_id == halo_id].Galaxy_vel_x),
-            float(df[df.Halo_id == halo_id].Galaxy_vel_y),
-            float(df[df.Halo_id == halo_id].Galaxy_vel_z),
+            float(halo.Galaxy_vel_x),
+            float(halo.Galaxy_vel_y),
+            float(halo.Galaxy_vel_z),
         ]
     )
     gas["Relative_Velocities"] = gas["Velocities"] - galaxy_vel.T
     gas["Relative_Velocities_abs"] = np.linalg.norm(
         gas["Relative_Velocities"], axis=1
     )
-    galaxy_pos = get_galaxy_pos(df, halo_id)
+    galaxy_pos = get_galaxy_pos(halo)
     get_relative_coordinates(gas, galaxy_pos)
     gas["Direction"] = (
         gas["Relative_Coordinates"].T
@@ -125,7 +136,8 @@ def get_gas_v_esc(df, snap, halo_id):
     stars = il.snapshot.loadHalo(sim_path, snap, halo_id, "stars")
     halo_particles = [gas, dm, stars]
     tot_num = np.sum(particles["count"] for particles in halo_particles)
-    gal_center = get_galaxy_pos(df, halo_id)
+    halo = get_halo(df, snap, halo_id)
+    gal_center = get_galaxy_pos(halo)
     all_particles = {}
     all_particles["Masses"] = np.empty(tot_num)
     all_particles["Relative_Distances"] = np.empty(tot_num)
@@ -306,15 +318,10 @@ def grid_gas(
 ):
     idx = halo_id
     halo_id = idx
-    gal_center = np.array(
-        [
-            float(df[df.Halo_id == halo_id].Galaxy_pos_x),
-            float(df[df.Halo_id == halo_id].Galaxy_pos_y),
-            float(df[df.Halo_id == halo_id].Galaxy_pos_z),
-        ]
-    )
-    r_vir = float(df[df.Halo_id == halo_id].R_vir)
-    r_HMR = float(df[df.Halo_id == halo_id].Galaxy_HMR)
+    halo = get_halo(df, snap, halo_id)
+    gal_center = get_galaxy_pos(halo)
+    r_vir = float(halo.R_vir)
+    r_HMR = float(halo.Galaxy_HMR)
 
     gas = retrieve_halo_gas(df, snap, halo_id)
     gas = cut_zoomed(gas=gas, r_vir=r_vir, zoom_in=zoom_in)
