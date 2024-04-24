@@ -5,6 +5,7 @@ from utils import (
     get_dm_mass,
     get_mass_in_kg,
     get_dist_in_km,
+    get_halo,
 )
 import illustris_python as il
 from pyTNG import gridding, gas_temperature
@@ -66,14 +67,6 @@ def get_relative_distances(gas):
     return
 
 
-def get_halo(df, snap, halo_id):
-    if "snap" in df.keys():
-        halo = df[(df.Halo_id == halo_id) & (df.snap == snap)]
-    else:
-        halo = df[df.Halo_id == halo_id]
-    return halo
-
-
 # Retrieves all particles in a halo and immidiatly adds the outflow velocity
 def retrieve_halo_gas(df, snap, halo_id):
     # _, sim_path = get_sim()
@@ -108,6 +101,7 @@ def retrieve_halo_gas(df, snap, halo_id):
     gas["Rot_Velocities"] = np.sqrt(
         gas["Relative_Velocities_abs"] ** 2 - gas["Flow_Velocities"] ** 2
     )
+    gas["Rot_Velocities"][np.isnan(gas["Rot_Velocities"])] = 0
     gas_temperature.gasTemp(gas)
     gas["hsml"] = 2.5 * (
         3 * (gas["Masses"] / gas["Density"]) / (4.0 * np.pi)
