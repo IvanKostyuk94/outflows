@@ -6,6 +6,7 @@ from utils import (
     get_mass_in_kg,
     get_dist_in_km,
     get_halo,
+    map_to_new_dict,
 )
 import illustris_python as il
 from pyTNG import gridding, gas_temperature
@@ -16,32 +17,11 @@ from scipy.spatial.transform import Rotation as R
 from astropy.constants import G
 from astropy import units as u
 from scipy.integrate import cumtrapz
-from gaussian_outflow_selection import group_gas
-
-
-# Corrects the particle dictionary to only contain the particles in relevant
-def map_to_new_dict(particles, relevant):
-    rel_particles = {}
-    newcount_particles = (relevant).sum()
-    for key, value in particles.items():
-        try:
-            rel_particles[key] = value[relevant]
-        # for Python scalars
-        except TypeError as e:
-            if "not subscriptable" in str(e):
-                pass
-            else:
-                raise
-        # for numpy scalars
-        except IndexError as e:
-            if "invalid index to scalar variable" in str(e):
-                pass
-            else:
-                print(key)
-                raise
-    if "count" in particles:
-        rel_particles["count"] = newcount_particles
-    return rel_particles
+from gaussian_outflow_selection import (
+    group_gas,
+    select_galaxy_group,
+    get_only_outflowing_gas,
+)
 
 
 def get_galaxy_pos(halo):
@@ -68,10 +48,14 @@ def get_relative_distances(gas):
 
 
 # Retrieves all particles in a halo and immidiatly adds the outflow velocity
-def retrieve_halo_gas(df, snap, halo_id):
+def retrieve_halo_gas(df, snap, halo_id, with_vesc=False):
     # _, sim_path = get_sim()
     # gas = il.snapshot.loadHalo(sim_path, snap, halo_id, "gas")
-    gas = get_gas_v_esc(df, snap, halo_id)
+    if with_vesc:
+        gas = get_gas_v_esc(df, snap, halo_id)
+    else:
+        _, sim_path = get_sim()
+        gas = il.snapshot.loadHalo(sim_path, snap, halo_id, "gas")
     z = get_redshift(4)
     gas["Velocities"] = gas["Velocities"] * np.sqrt(scale_factor(z))
 
@@ -221,21 +205,27 @@ def gal_plane_tranformer(particles, r_HMR):
     particles["Relative_Distances"] = np.sqrt(
         np.sum(np.square(particles["Relative_Coordinates"]), axis=1)
     )
-    idces_rel_particles = particles["Relative_Distances"] < 2 * r_HMR
+    idces_rel_particles = particles["Relative_Distances"] < r_HMR
     rel_particles = map_to_new_dict(particles, idces_rel_particles)
-    pca = PCA(3)
-    pca.fit(rel_particles["Coordinates"])
-    return pca
+    cov_matrix = np.cov(rel_particles["Relative_Coordinates"], rowvar=False)
+    _, eigenvectors = np.linalg.eigh(cov_matrix)
+    rotation_matrix = eigenvectors.T
+    particles["Relative_Coordinates"] = np.dot(
+        particles["Relative_Coordinates"], rotation_matrix
+    )
+    return rotation_matrix
 
 
 def rotate_into_galactic_plane(gas, center, r_HMR):
-    gas["Original_Coordinates"] = gas["Coordinates"]
-    transformer = gal_plane_tranformer(gas, r_HMR)
-    gas["Coordinates"] = transformer.transform(gas["Coordinates"])
-    gas["Velocities"] = transformer.transform(gas["Velocities"])
-
-    center = transformer.transform(center)
-    return center[0]
+    rotation_matrix = gal_plane_tranformer(gas, r_HMR)
+    gas["Relative_Coordinates"] = np.dot(
+        gas["Relative_Coordinates"], rotation_matrix
+    )
+    gas["Relative_Velocities"] = np.dot(
+        gas["Relative_Velocities"], rotation_matrix
+    )
+    gas["Coordinates"] = center + gas["Relative_Coordinates"]
+    return
 
 
 def line_of_sight_projection(gas, angle, center):
@@ -295,6 +285,14 @@ def rot_preselection(gas, crit_ratio=0.5):
     return selected_gas
 
 
+def remove_nans(grids, quants):
+    for quant in quants:
+        grids[quant] = np.where(
+            grids["Masses"] != 0, grids[quant] / grids["Masses"], 0
+        )
+    return
+
+
 def grid_gas(
     halo_id,
     df,
@@ -320,11 +318,13 @@ def grid_gas(
     gas = retrieve_halo_gas(df, snap, halo_id)
     gas = cut_zoomed(gas=gas, r_vir=r_vir, zoom_in=zoom_in)
     if grouped_selection:
-        gas = select_outflowing_gas(
+        out_gas = select_outflowing_gas(
             gas, threshold_velocity=0, v_esc_ratio=None
         )
-        group_gas(gas, props=group_props, peak_number=n_peak)
-    gal_center = rotate_into_galactic_plane(gas, [gal_center], r_HMR)
+        group_gas(out_gas, props=group_props, peak_number=n_peak)
+
+    rotate_into_galactic_plane(gas, [gal_center], r_HMR)
+
     if projection_angle is not None:
         gal_center = line_of_sight_projection(
             gas, projection_angle, gal_center
@@ -379,28 +379,53 @@ def grid_gas(
             grid_cen=grid_cen,
             n_threads=n_threads,
         )
-        for quant in quants:
-            grids[quant] = np.where(
-                grids["Masses"] != 0, grids[quant] / grids["Masses"], 0
-            )
+        remove_nans(grids, quants)
         return grids
     else:
-        all_grids = []
-        for i in range(np.max(gas["group"]) + 1):
-            gas_group = select_gas_group(gas, i)
-            group_grids = get_gridded(
-                gas=gas_group,
-                quants=quants,
-                grid_shape=shape,
-                grid_size=box_size,
-                grid_cen=grid_cen,
-                n_threads=n_threads,
+        if grouped_selection:
+            out_gas = select_outflowing_gas(
+                gas, threshold_velocity=0, v_esc_ratio=None
             )
-            for quant in quants:
-                group_grids[quant] = np.where(
-                    group_grids["Masses"] != 0,
-                    group_grids[quant] / group_grids["Masses"],
-                    0,
-                )
-            all_grids.append(group_grids)
+            group_gas(out_gas, props=group_props, peak_number=n_peak)
+
+        gas_groups = []
+        for i in range(np.max(out_gas["group"]) + 1):
+            gas_group = select_gas_group(out_gas, i)
+            gas_groups.append(gas_group)
+        all_grids = []
+
+        full_gridded = get_gridded(
+            gas=gas,
+            quants=quants,
+            grid_shape=shape,
+            grid_size=box_size,
+            grid_cen=grid_cen,
+            n_threads=n_threads,
+        )
+        all_grids.append(full_gridded)
+
+        galaxy_group_num = select_galaxy_group(gas_groups)
+        galaxy_group = gas_groups[galaxy_group_num]
+
+        galaxy_gridded = get_gridded(
+            gas=galaxy_group,
+            quants=quants,
+            grid_shape=shape,
+            grid_size=box_size,
+            grid_cen=grid_cen,
+            n_threads=n_threads,
+        )
+        all_grids.append(galaxy_gridded)
+        out_gas = get_only_outflowing_gas(out_gas, galaxy_group_num)
+        outflow_gridded = get_gridded(
+            gas=out_gas,
+            quants=quants,
+            grid_shape=shape,
+            grid_size=box_size,
+            grid_cen=grid_cen,
+            n_threads=n_threads,
+        )
+        all_grids.append(outflow_gridded)
+        for grids in all_grids:
+            remove_nans(grids, quants)
         return all_grids
