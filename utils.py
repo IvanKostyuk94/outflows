@@ -1,5 +1,6 @@
 import os
 import h5py
+import numpy as np
 from pyTNG import data_interface as _data_interface
 from pyTNG.cosmology import TNGcosmo
 from astropy import units as u
@@ -95,3 +96,11 @@ def get_halo_data(df, halo_id, snap):
     data["Galaxy_idx"] = halo.idx.values[0]
     data["Halo_idx"] = halo_id
     return data
+
+
+def autozoom(r_vir, gal_hmr, factor=20):
+    zoom_in = int(np.ceil(r_vir / gal_hmr / factor))
+    if zoom_in > 1:
+        return zoom_in
+    else:
+        return 1

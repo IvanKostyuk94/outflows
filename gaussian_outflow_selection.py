@@ -3,6 +3,7 @@ import numpy as np
 from scipy import stats
 from scipy.stats import norm
 from sklearn.mixture import GaussianMixture as GMM
+from Grid_halo import map_to_new_dict
 
 
 def get_opt_bic(data, min_number, max_number):
@@ -117,3 +118,18 @@ def group_gas(
         n_peak = peak_number
     associate_gas_to_peaks(gas, n_peaks=n_peak, props=props)
     return n_peak
+
+
+def select_galaxy_group(group_array):
+    count = 0
+    galaxy_group = 0
+    for i, group in enumerate(group_array):
+        if group["count"] > count:
+            galaxy_group = i
+    return galaxy_group
+
+
+def get_only_outflowing_gas(out_gas, galaxy_group):
+    idces_rel_gas = out_gas["group"] != galaxy_group
+    rel_gas = map_to_new_dict(out_gas, idces_rel_gas)
+    return rel_gas

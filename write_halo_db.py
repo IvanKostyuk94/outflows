@@ -6,32 +6,21 @@ from utils import (
     get_halo,
     get_haloID_from_galaxyID,
     get_galaxyID_from_haloID,
+    autozoom,
 )
 from Grid_halo import (
     retrieve_halo_gas,
     cut_zoomed,
     select_gas_group,
     select_outflowing_gas,
-    map_to_new_dict,
 )
-from gaussian_outflow_selection import group_gas
+from gaussian_outflow_selection import (
+    group_gas,
+    select_galaxy_group,
+    get_only_outflowing_gas,
+)
 from find_progenitors import get_progenitor_history
 from config import config
-
-
-def select_galaxy_group(group_array):
-    count = 0
-    galaxy_group = 0
-    for i, group in enumerate(group_array):
-        if group["count"] > count:
-            galaxy_group = i
-    return galaxy_group
-
-
-def get_only_outflowing_gas(out_gas, galaxy_group):
-    idces_rel_gas = out_gas["group"] != galaxy_group
-    rel_gas = map_to_new_dict(out_gas, idces_rel_gas)
-    return rel_gas
 
 
 def select_keys_of_interest(gas, keys=None):
@@ -69,7 +58,7 @@ def create_halo_dict(
     r_vir = float(halo.R_vir)
 
     if zoom_in == "autozoom":
-        zoom_in = int(np.ceil(halo.R_vir / halo.Galaxy_HMR / 20))
+        zoom_in = autozoom(halo.R_vir, halo.Galaxy_HMR)
 
     halo_info = get_halo_data(df, halo_id, snap)
     halo_info["zoom"] = zoom_in
