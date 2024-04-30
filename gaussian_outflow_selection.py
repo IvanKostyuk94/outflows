@@ -3,7 +3,7 @@ import numpy as np
 from scipy import stats
 from scipy.stats import norm
 from sklearn.mixture import GaussianMixture as GMM
-from Grid_halo import map_to_new_dict
+from utils import map_to_new_dict
 
 
 def get_opt_bic(data, min_number, max_number):
@@ -82,6 +82,13 @@ def get_probs(v_out, pdfs, weights):
 
 
 def associate_gas_to_peaks(gas, n_peaks, props):
+    if props is None:
+        props = [
+            "Flow_Velocities",
+            "Rot_Velocities",
+            "Temperature",
+            "Coordinates",
+        ]
     gmm = GMM(
         n_components=n_peaks,
         max_iter=5000,
@@ -121,11 +128,16 @@ def group_gas(
 
 
 def select_galaxy_group(group_array):
-    count = 0
+    mean_dist_min = np.inf
     galaxy_group = 0
+
     for i, group in enumerate(group_array):
-        if group["count"] > count:
+        mean_dist = np.median(
+            np.linalg.norm(group["Relative_Coordinates"], axis=1)
+        )
+        if mean_dist < mean_dist_min:
             galaxy_group = i
+            mean_dist_min = mean_dist
     return galaxy_group
 
 
