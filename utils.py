@@ -104,3 +104,28 @@ def autozoom(r_vir, gal_hmr, factor=20):
         return zoom_in
     else:
         return 1
+
+
+# Corrects the particle dictionary to only contain the particles in relevant
+def map_to_new_dict(particles, relevant):
+    rel_particles = {}
+    newcount_particles = (relevant).sum()
+    for key, value in particles.items():
+        try:
+            rel_particles[key] = value[relevant]
+        # for Python scalars
+        except TypeError as e:
+            if "not subscriptable" in str(e):
+                pass
+            else:
+                raise
+        # for numpy scalars
+        except IndexError as e:
+            if "invalid index to scalar variable" in str(e):
+                pass
+            else:
+                print(key)
+                raise
+    if "count" in particles:
+        rel_particles["count"] = newcount_particles
+    return rel_particles

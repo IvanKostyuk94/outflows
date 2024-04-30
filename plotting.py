@@ -1,7 +1,7 @@
 import numpy as np
 from matplotlib import pyplot as plt
 from config import config
-from utils import get_redshift, scale_factor
+from utils import get_redshift, scale_factor, get_halo, autozoom
 from pyTNG.cosmology import TNGcosmo
 from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
 from matplotlib import colors
@@ -9,7 +9,10 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib import colormaps
 from matplotlib.patches import Circle
 
-from Grid_halo import grid_gas, retrieve_halo_gas, get_halo
+from Grid_halo import (
+    grid_gas,
+    retrieve_halo_gas,
+)
 from gaussian_outflow_selection import group_gas
 
 
@@ -433,17 +436,12 @@ def plot_prop_maps_grouped(
     grid_size=100,
     zoom_in=1,
     angle=None,
-    group_props=["Flow_Velocities"],
+    group_props=None,
     n_peak=None,
 ):
+    halo = get_halo(df=df, snap=snap, halo_id=halo_id)
     if zoom_in == "autozoom":
-        zoom_in = int(
-            np.ceil(
-                df[df.Halo_id == halo_id].R_vir
-                / df[df.Halo_id == halo_id].Galaxy_HMR
-                / 20
-            )
-        )
+        zoom_in = autozoom(halo.R_vir, halo.Galaxy_HMR)
 
     gases = grid_gas(
         halo_id,
@@ -460,7 +458,7 @@ def plot_prop_maps_grouped(
         n_peak=n_peak,
     )
 
-    r_vir = float(df[df.Halo_id == halo_id].R_vir)
+    r_vir = float(halo.R_vir)
     if zoom_in != 1:
         with_circle = False
         box_size = r_vir * 2 * float(config["cutout_scale"]) / zoom_in
