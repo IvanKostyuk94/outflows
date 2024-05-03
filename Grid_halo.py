@@ -201,11 +201,11 @@ def select_gas_group(gas, group_num):
     return rel_gas
 
 
-def gal_plane_tranformer(particles, r_HMR):
+def gal_plane_tranformer(particles, r_GHMR):
     particles["Relative_Distances"] = np.sqrt(
         np.sum(np.square(particles["Relative_Coordinates"]), axis=1)
     )
-    idces_rel_particles = particles["Relative_Distances"] < r_HMR
+    idces_rel_particles = particles["Relative_Distances"] < r_GHMR
     rel_particles = map_to_new_dict(particles, idces_rel_particles)
     cov_matrix = np.cov(rel_particles["Relative_Coordinates"], rowvar=False)
     _, eigenvectors = np.linalg.eigh(cov_matrix)
@@ -216,8 +216,8 @@ def gal_plane_tranformer(particles, r_HMR):
     return rotation_matrix
 
 
-def rotate_into_galactic_plane(gas, center, r_HMR):
-    rotation_matrix = gal_plane_tranformer(gas, r_HMR)
+def rotate_into_galactic_plane(gas, center, r_GHMR):
+    rotation_matrix = gal_plane_tranformer(gas, r_GHMR)
     gas["Relative_Coordinates"] = np.dot(
         gas["Relative_Coordinates"], rotation_matrix
     )
@@ -279,6 +279,15 @@ def cut_zoomed(gas, r_vir, zoom_in):
     return selected_gas
 
 
+def cut_5gal_scale(gas, r_ghmr, r_vir):
+    max_r = 30 * r_ghmr
+    if max_r > r_vir:
+        max_r = r_vir
+    relevant_gas = np.linalg.norm(gas["Relative_Coordinates"], axis=1) < max_r
+    selected_gas = map_to_new_dict(gas, relevant_gas)
+    return selected_gas
+
+
 def rot_preselection(gas, crit_ratio=0.5):
     relevant_gas = gas["Flow_Velocities"] / gas["Rot_Velocities"] > crit_ratio
     selected_gas = map_to_new_dict(gas, relevant_gas)
@@ -313,17 +322,18 @@ def grid_gas(
     halo = get_halo(df, snap, halo_id)
     gal_center = get_galaxy_pos(halo)
     r_vir = float(halo.R_vir)
-    r_HMR = float(halo.Galaxy_HMR)
+    r_GHMR = float(halo.Galaxy_GHMR)
+    r_SHMR = float(halo.Galaxy_SHMR)
 
     gas = retrieve_halo_gas(df, snap, halo_id)
-    gas = cut_zoomed(gas=gas, r_vir=r_vir, zoom_in=zoom_in)
+    gas = cut_5gal_scale(gas=gas, r_ghmr=r_SHMR, r_vir=r_vir)
     if grouped_selection:
         out_gas = select_outflowing_gas(
             gas, threshold_velocity=0, v_esc_ratio=None
         )
         group_gas(out_gas, props=group_props, peak_number=n_peak)
 
-    rotate_into_galactic_plane(gas, [gal_center], r_HMR)
+    rotate_into_galactic_plane(gas, [gal_center], r_SHMR)
 
     if projection_angle is not None:
         gal_center = line_of_sight_projection(
