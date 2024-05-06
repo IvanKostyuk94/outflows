@@ -31,7 +31,13 @@ def get_opt_bic(data, min_number, max_number):
 
 def normalize(data, key):
     lin_data = ["Flow_Velocities", "Rot_Velocities"]
-    log_data = ["Coordinates", "Temperature", "StarFormationRate"]
+    log_data = [
+        "Coordinates",
+        "Temperature",
+        "StarFormationRate",
+        "Relative_Distances",
+        "Abs_Coordinates",
+    ]
     if key in log_data:
         # Add regulator to data to avoid values of -inf
         data = np.log(data + np.min(np.abs(data)) / 1e5)
@@ -52,7 +58,7 @@ def get_data(gas, keys):
         data = data.reshape(-1, 1)
     else:
         data = []
-        for key in keys:
+        for i, key in enumerate(keys):
             if gas[key].ndim == 1:
                 data.append(normalize(gas[key], key))
             elif gas[key].ndim == 2:
@@ -87,7 +93,7 @@ def associate_gas_to_peaks(gas, n_peaks, props):
             "Flow_Velocities",
             "Rot_Velocities",
             "Temperature",
-            "Coordinates",
+            "Abs_Coordinates",
         ]
     gmm = GMM(
         n_components=n_peaks,
@@ -97,14 +103,6 @@ def associate_gas_to_peaks(gas, n_peaks, props):
     )
     data = get_data(gas, keys=props)
     gmm.fit(data)
-    # means = gmm.fit(x).means_
-    # stds = np.sqrt(gmm.fit(x).covariances_)
-    # weights = gmm.fit(x).weights_
-    # pdfs = []
-    # for i in range(n_peaks):
-    #     pdfs.append(stats.norm(loc=means[i][0], scale=stds[i][0][0]))
-    # probs = get_probs(gas["Flow_Velocities"], pdfs, weights)
-    # gas["group"] = np.argmax(probs, axis=0) + 1
     gas["group"] = gmm.predict(data)
     return
 
@@ -114,15 +112,15 @@ def group_gas(
     props=["Flow_Velocities"],
     min_number=1,
     max_number=10,
-    peak_number=None,
+    n_peak=None,
 ):
-    if peak_number is None:
+    if n_peak is None:
         n_peak, bics, counters = select_number_of_peaks(
             gas, keys=props, min_number=min_number, max_number=max_number
         )
         print(f"Selecting {n_peak} peaks. The bic values obtained were {bics}")
     else:
-        n_peak = peak_number
+        n_peak = n_peak
     associate_gas_to_peaks(gas, n_peaks=n_peak, props=props)
     return n_peak
 
