@@ -4,6 +4,7 @@ import numpy as np
 from pyTNG import data_interface as _data_interface
 from pyTNG.cosmology import TNGcosmo
 from astropy import units as u
+from astropy.constants import G
 
 
 def get_sim():
@@ -98,8 +99,8 @@ def get_halo_data(df, halo_id, snap):
     return data
 
 
-def autozoom(r_vir, gal_hmr, factor=20):
-    zoom_in = int(np.ceil(r_vir / gal_hmr / factor))
+def autozoom(r_vir, gal_ghmr, factor=10):
+    zoom_in = int(np.ceil(r_vir / gal_ghmr / factor))
     if zoom_in > 1:
         return zoom_in
     else:
@@ -129,3 +130,17 @@ def map_to_new_dict(particles, relevant):
     if "count" in particles:
         rel_particles["count"] = newcount_particles
     return rel_particles
+
+
+def sort_all_keys(particles, sort_key):
+    sorted_idces = np.argsort(particles[sort_key])
+    for key in particles.keys():
+        sorted_array = particles[key][sorted_idces]
+        particles[key] = sorted_array
+    return
+
+
+def calculate_acc(mass, dist_km):
+    G_correct = G.to(u.km**3 / u.kg / u.s**2).value
+    g = -1 * G_correct * get_mass_in_kg(mass) / dist_km**2
+    return g
