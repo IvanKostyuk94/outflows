@@ -27,7 +27,7 @@ class Galaxy:
         halo_id,
         snap,
         with_vesc=False,
-        cut_factor=20,
+        cut_factor=50,
         n_peak=4,
         group_props=None,
     ):
@@ -276,7 +276,9 @@ class Galaxy:
 
     def get_angular_momentum_direction(self):
         self.retrieve_galaxy_stars()
-        idces_rel_stars = self.stars["Relative_Distances"] < self.scale_radius
+        idces_rel_stars = (
+            self.stars["Relative_Distances"] < 5 * self.scale_radius
+        )
         rel_stars = map_to_new_dict(self.stars, idces_rel_stars)
         ang_mom = (
             np.cross(
@@ -316,9 +318,13 @@ class Galaxy:
 
     # This is very hacky and should be adjusted in the future
     def preprocess_for_gridding(self):
-        self.gas["Abs_Coordinates"] = np.copy(self.gas["Coordinates"])
-        self.out_gas["Abs_Coordinates"] = np.copy(self.out_gas["Coordinates"])
+        if "Abs_Coordinates" not in self.gas.keys():
+            self.gas["Abs_Coordinates"] = np.copy(self.gas["Coordinates"])
         self.gas["Coordinates"]
         self.gas["Coordinates"] = self.gas["Relative_Coordinates"]
         if hasattr(self, "out_gas"):
             self.out_gas["Coordinates"] = self.out_gas["Relative_Coordinates"]
+            if "Abs_Coordinates" not in self.out_gas.keys():
+                self.out_gas["Abs_Coordinates"] = np.copy(
+                    self.out_gas["Coordinates"]
+                )
