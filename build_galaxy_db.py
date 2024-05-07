@@ -120,7 +120,7 @@ def generate_database(snap):
         os.system(f"mkdir {dir_path}")
     save_path = os.path.join(dir_path, df_name)
     full_df = build_full_df(snap)
-    full_df.to_hdf(save_path, "galaxies")
+    full_df.to_hdf(save_path, config["hdf_key"])
     return
 
 
@@ -159,5 +159,5 @@ def merge_data_bases(
             df_dict["idx"].extend(df.index)
 
     full_df = pd.DataFrame.from_dict(df_dict)
-    full_df.to_hdf(destination_path, "galaxies")
+    full_df.to_hdf(destination_path, config["hdf_key"])
     return
