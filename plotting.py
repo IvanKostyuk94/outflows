@@ -9,11 +9,9 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib import colormaps
 from matplotlib.patches import Circle
 
-from Grid_halo import (
-    grid_gas,
-    retrieve_halo_gas,
-)
+from Grid_halo import GasGridder
 from gaussian_outflow_selection import group_gas
+from process_gas import Galaxy
 
 
 def prop_labels(prop):
@@ -399,7 +397,7 @@ def retrieve_prop_maps(
 ):
     halo = get_halo(df, snap, halo_id)
     if zoom_in == "autozoom":
-        zoom_in = int(np.ceil(halo.R_vir / halo.Galaxy_HMR / 20))
+        zoom_in = int(np.ceil(halo.R_vir / halo.Galaxy_GHMR / 20))
 
     gas = grid_gas(
         halo_id,
@@ -434,43 +432,33 @@ def plot_prop_maps_grouped(
     snap,
     props,
     grid_size=100,
-    zoom_in=1,
-    angle=None,
     group_props=None,
     n_peak=None,
 ):
-    halo = get_halo(df=df, snap=snap, halo_id=halo_id)
-    if zoom_in == "autozoom":
-        zoom_in = autozoom(halo.R_vir, halo.Galaxy_HMR)
 
-    gases = grid_gas(
-        halo_id,
-        df,
-        snap,
-        out_only=False,
-        threshold_velocity=None,
-        v_esc_ratio=None,
-        grid_size=grid_size,
-        zoom_in=zoom_in,
-        projection_angle=angle,
-        grouped_selection=True,
+    gal = Galaxy(
+        df=df,
+        halo_id=halo_id,
+        snap=snap,
         group_props=group_props,
         n_peak=n_peak,
     )
+    gridder = GasGridder(gal=gal, grid_size=grid_size, grouped_selection=True)
+    gridder.grid_gas()
 
-    r_vir = float(halo.R_vir)
-    if zoom_in != 1:
-        with_circle = False
-        box_size = r_vir * 2 * float(config["cutout_scale"]) / zoom_in
-        sizebar_length = 1
-    else:
-        with_circle = True
-        box_size = r_vir * 2 / zoom_in
-        sizebar_length = 10
+    with_circle = False
+    box_size = gridder.box_size[0]
+    sizebar_length = 1
     for prop in props:
-        for gas in gases:
+        for gas in gridder.grids:
             plot_prop_maps(
-                gas, r_vir, prop, snap, with_circle, box_size, sizebar_length
+                gas,
+                gal.r_vir,
+                prop,
+                snap,
+                with_circle,
+                box_size,
+                sizebar_length,
             )
     return
 
