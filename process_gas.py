@@ -290,11 +290,9 @@ class Galaxy:
         return
 
     def rot_matrix_from_ang_mom(self):
-        z_axis = np.array([0, 0, 1])
-        self.rotation = R.from_rotvec(
-            np.arccos(np.dot(z_axis, self.ang_mom_dir))
-            * np.cross(z_axis, self.ang_mom_dir)
-        )
+        z_axis = np.array([[0, 0, 1]])
+        self.ang_mom_dir = np.array([self.ang_mom_dir])
+        self.rotation, _ = R.align_vectors(self.ang_mom_dir, z_axis)
         return
 
     def rotate_into_galactic_plane(self):
