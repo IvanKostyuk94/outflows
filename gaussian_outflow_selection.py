@@ -30,24 +30,28 @@ def get_opt_bic(data, min_number, max_number):
 
 
 def normalize(data, key):
-    lin_data = ["Flow_Velocities", "Rot_Velocities"]
+    lin_data = [
+        "Flow_Velocities",
+        "Rot_Velocities",
+        "Abs_Coordinates",
+    ]
     log_data = [
-        "Coordinates",
         "Temperature",
         "StarFormationRate",
         "Relative_Distances",
-        "Abs_Coordinates",
     ]
     if key in log_data:
         # Add regulator to data to avoid values of -inf
-        data = np.log(data + np.min(np.abs(data)) / 1e5)
+        data = np.log(data + np.min(data[data > 0]) / 1e5)
     elif key in lin_data:
         pass
+    elif key == "Coordinates":
+        data = data - np.min(data)
+        data = np.log(data + np.min(data[data > 0]) / 1e5)
     else:
         raise NotImplementedError(
             f"Normalization for {key} is not implemented yet."
         )
-
     normalized = (data - np.min(data)) / (np.max(data) - np.min(data))
     return normalized
 
@@ -93,7 +97,7 @@ def associate_gas_to_peaks(gas, n_peaks, props):
             "Flow_Velocities",
             "Rot_Velocities",
             "Temperature",
-            "Abs_Coordinates",
+            "Coordinates",
         ]
     gmm = GMM(
         n_components=n_peaks,
@@ -126,16 +130,14 @@ def group_gas(
 
 
 def select_galaxy_group(group_array):
-    mean_dist_min = np.inf
+    median_dist_min = np.inf
     galaxy_group = 0
 
     for i, group in enumerate(group_array):
-        mean_dist = np.median(
-            np.linalg.norm(group["Relative_Coordinates"], axis=1)
-        )
-        if mean_dist < mean_dist_min:
+        median_dist = np.median(group["Relative_Distances"])
+        if median_dist < median_dist_min:
             galaxy_group = i
-            mean_dist_min = mean_dist
+            median_dist_min = median_dist
     return galaxy_group
 
 
