@@ -29,7 +29,7 @@ class GasGridder:
         self.get_gridding_quants()
 
         self.box_size = (
-            self.gal.cut_factor * self.gal.scale_radius * 2 * np.ones(3)
+            0.7 * self.gal.cut_factor * self.gal.scale_radius * 2 * np.ones(3)
         )
         self.shape = (grid_size * np.ones(3)).astype(np.int64)
         self.grid_cen = np.array([0, 0, 0])
@@ -77,11 +77,7 @@ class GasGridder:
         return
 
     def grid_gas(self):
-        self.gal.retrieve_halo_gas()
-        self.gal.cut_gal_scale()
         self.gal.rotate_into_galactic_plane()
-        self.gal.preprocess_for_gridding()
-
         if self.out_only:
             self.gal.select_outflowing_gas(
                 threshold_velocity=self.threshold_velocity,
@@ -93,20 +89,13 @@ class GasGridder:
         self.grids = grids
 
         if self.grouped_selection:
-            self.gal.select_outflowing_gas(threshold_velocity=0)
-            self.gal.preprocess_for_gridding()
-
             all_grids = []
             all_grids.append(grids)
 
-            self.gal.group_gas()
-            self.gal.get_gas_groups()
-            self.gal.select_galaxy_group()
-            galaxy_gridded = self.get_gridded(gas=self.gal.galaxy_group)
+            galaxy_gridded = self.get_gridded(gas=self.gal.out_galaxy)
             all_grids.append(galaxy_gridded)
 
-            self.gal.get_only_outflowing_gas()
-            outflow_gridded = self.get_gridded(gas=self.gal.grouped_out_gas)
+            outflow_gridded = self.get_gridded(gas=self.gal.out_gas)
             all_grids.append(outflow_gridded)
 
             for grids in all_grids:

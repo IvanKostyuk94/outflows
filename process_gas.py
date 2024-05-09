@@ -23,16 +23,18 @@ from utils import (
 class Galaxy:
 
     _, sim_path = get_sim()
+    out_gas_selections = ["GMM", "v_esc_ratio", "v_crit"]
 
     def __init__(
         self,
         df,
         halo_id,
         snap,
-        with_vesc=False,
         cut_factor=10,
         n_peak=4,
         group_props=None,
+        out_gas_sel="GMM",
+        v_esc_ratio=None,
     ):
 
         self._halo = None
@@ -40,17 +42,27 @@ class Galaxy:
         self._gal_vel = None
         self._stars = None
         self._gas = None
+        self._out_gas = None
+        self._selected_out_gas = None
+        self._out_galaxy = None
 
         self.df = df
         self.halo_id = halo_id
         self.snap = snap
         self.galaxy_id = int(self.halo.idx)
-        self.with_vesc = with_vesc
         self.scale_radius = float(self.halo.r_SFR)
         self.cut_factor = cut_factor
         self.r_vir = float(self.halo.R_vir)
         self.n_peak = n_peak
         self.group_props = group_props
+        self.v_esc_ratio = v_esc_ratio
+        self.z = get_redshift(self.snap)
+        if out_gas_sel in self.out_gas_selections:
+            self.out_gas_sel = out_gas_sel
+        else:
+            raise NotImplementedError(
+                f"Outflow selection based on {out_gas_sel} is not implemented yet"
+            )
 
     @property
     def halo(self):
@@ -101,8 +113,8 @@ class Galaxy:
             self._gas = il.snapshot.loadHalo(
                 self.sim_path, self.snap, self.halo_id, "gas"
             )
-            if self.with_vesc:
-                self._get_gas_v_esc(self)
+            if self.out_gas_sel == "v_esc_ratio":
+                self._get_gas_v_esc(self, self._gas)
 
             self._get_relative_coordinates(self._gas)
             self._get_relative_distances(self._gas)
@@ -115,6 +127,60 @@ class Galaxy:
             self._get_hsml()
         return self._gas
 
+    # Selects all gas that is moving out: v_out>0
+    @property
+    def out_gas(self):
+        if self._out_gas is None:
+            if self.out_gas_sel == "GMM":
+                all_out_gas = self._select_moving_gas(threshold_velocity=0)
+                self._group_gas(all_out_gas)
+                galaxy_groups = self._get_gas_groups(all_out_gas)
+                galaxy_group_num, self._out_galaxy = self._select_galaxy_group(
+                    galaxy_groups
+                )
+                self._out_gas = get_only_outflowing_gas(
+                    all_out_gas, galaxy_group=galaxy_group_num
+                )
+            elif self.out_gas_sel == "v_esc_ratio":
+                self._out_gas = self._select_moving_gas(
+                    v_esc_ratio=self.v_esc_ratio
+                )
+            elif self.out_gas_selections == "v_crit":
+                self._out_gas = self._select_moving_gas(
+                    threshold_velocity=self.v_esc_ratio
+                )
+        return self._out_gas
+
+    """Selects the part of the central galaxy that is outflowing.
+    I only use it for some tests and it only works for GMM selection
+    otherwise it returns None"""
+
+    @property
+    def out_galaxy(self):
+        if self._out_galaxy is None:
+            _ = self.out_gas
+        return self._out_galaxy
+
+    def _select_moving_gas(self, threshold_velocity=None, v_esc_ratio=None):
+        if self.gas["count"] == 0:
+            return self.gas
+        else:
+            if (threshold_velocity is not None) and (v_esc_ratio is None):
+                idces_rel_gas = (
+                    self.gas["Flow_Velocities"] > threshold_velocity
+                )
+            elif (threshold_velocity is None) and (v_esc_ratio is not None):
+                idces_rel_gas = (
+                    self.gas["Relative_Velocities_abs"]
+                    > v_esc_ratio * self.gas["v_esc"]
+                ) & (self.gas["Flow_Velocities"] > 0)
+            else:
+                raise ValueError(
+                    'Either "v_esc_ratio" or "threshold_velocity" but not both have to be "None"'
+                )
+            moving_gas = map_to_new_dict(self.gas, idces_rel_gas)
+            return moving_gas
+
     def _cut_gal_scale(self, gas):
         max_r = self.cut_factor * self.scale_radius
         if max_r > self.r_vir:
@@ -124,19 +190,17 @@ class Galaxy:
         return gas
 
     def _get_relative_coordinates(self, particles):
-        particles["Relative_Coordinates"] = (
-            particles["Coordinates"] - self.gal_pos
-        )
+        particles["Abs_Coordinates"] = np.copy(particles["Coordinates"])
+        particles["Coordinates"] = particles["Coordinates"] - self.gal_pos
         return
 
     def _get_relative_distances(self, particles):
         particles["Relative_Distances"] = np.sqrt(
-            np.sum(np.square(particles["Relative_Coordinates"]), axis=1)
+            np.sum(np.square(particles["Coordinates"]), axis=1)
         )
         return
 
     def _get_velocities(self, particles):
-        self.z = get_redshift(self.snap)
         particles["Velocities"] = particles["Velocities"] * np.sqrt(
             scale_factor(self.z)
         )
@@ -151,8 +215,7 @@ class Galaxy:
 
     def _get_dir(self, gas):
         gas["Direction"] = (
-            gas["Relative_Coordinates"].T
-            / np.linalg.norm(gas["Relative_Coordinates"], axis=1)
+            gas["Coordinates"].T / np.linalg.norm(gas["Coordinates"], axis=1)
         ).T
         return
 
@@ -178,29 +241,21 @@ class Galaxy:
         ) ** (1.0 / 3)
         return
 
-    def group_gas(self):
-        group_gas(self.out_gas, props=self.group_props, n_peak=self.n_peak)
+    def _group_gas(self, gas):
+        group_gas(gas, props=self.group_props, n_peak=self.n_peak)
         return
 
-    def get_gas_groups(self):
-        self.gas_groups = []
-        for i in range(np.max(self.out_gas["group"]) + 1):
-            gas_group = self.select_gas_group(i)
-            self.gas_groups.append(gas_group)
-        return
+    def _get_gas_groups(self, gas):
+        gas_groups = []
+        for i in range(np.max(gas["group"]) + 1):
+            gas_group = self.select_gas_group(gas, i)
+            gas_groups.append(gas_group)
+        return gas_groups
 
-    def select_galaxy_group(self):
-        self.galaxy_group_num = select_galaxy_group(self.gas_groups)
-        self.galaxy_group = self.gas_groups[self.galaxy_group_num]
-        return
-
-    def get_only_outflowing_gas(self):
-        if not hasattr(self, "self_galaxy_group"):
-            self.select_galaxy_group()
-        self.grouped_out_gas = get_only_outflowing_gas(
-            out_gas=self.out_gas, galaxy_group=self.galaxy_group_num
-        )
-        return
+    def _select_galaxy_group(self, gas_groups):
+        galaxy_group_num = select_galaxy_group(gas_groups)
+        galaxy_group = gas_groups[galaxy_group_num]
+        return galaxy_group_num, galaxy_group
 
     def build_all_particles_dict(self, halo_particles):
         tot_num = np.sum(particles["count"] for particles in halo_particles)
@@ -215,8 +270,8 @@ class Galaxy:
             else:
                 start = start + halo_particles[i - 1]["count"]
             end = particles["count"] + start
-            self.get_relative_coordinates(particles)
-            self.get_relative_distances(particles)
+            self._get_relative_coordinates(particles)
+            self._get_relative_distances(particles)
             if "Masses" in particles.keys():
                 all_particles["Masses"][start:end] = particles["Masses"]
             else:
@@ -233,18 +288,17 @@ class Galaxy:
         sort_all_keys(particles=all_particles, sort_key="Relative_Distances")
         return all_particles
 
-    def get_gas_v_esc(self):
+    def _get_gas_v_esc(self, gas):
         dm = il.snapshot.loadHalo(self.sim_path, self.snap, self.halo_id, "dm")
         stars = il.snapshot.loadHalo(
             self.sim_path, self.snap, self.halo_id, "stars"
         )
-        halo_particles = [self.gas, dm, stars]
+        halo_particles = [gas, dm, stars]
         all_particles = self.build_all_particles_dict(self, halo_particles)
         all_particles["Masses_Cum"] = np.cumsum(all_particles["Masses"])
 
-        z = get_redshift(self.snap)
         all_particles["Relative_Distances_km"] = get_dist_in_km(
-            all_particles["Relative_Distances"], z
+            all_particles["Relative_Distances"], self.z
         )
         all_particles["Grav_acc"] = calculate_acc(
             all_particles["Masses_Cum"], all_particles["Relative_Distances_km"]
@@ -267,81 +321,45 @@ class Galaxy:
         sort_all_keys(particles=all_particles, sort_key="Numbering")
 
         gas_indices = np.where(
-            np.isin(all_particles["Numbering"], self.gas["Numbering"])
+            np.isin(all_particles["Numbering"], gas["Numbering"])
         )[0]
 
-        self.gas["v_esc"] = all_particles["v_esc"][gas_indices]
-        return self.gas
+        gas["v_esc"] = all_particles["v_esc"][gas_indices]
+        return gas
 
-    def select_outflowing_gas(self, threshold_velocity=None, v_esc_ratio=None):
-        if self.gas["count"] == 0:
-            return self.gas
+    def select_gas_group(self, gas, group_num):
+        if gas["count"] == 0:
+            return gas
         else:
-            if (threshold_velocity is not None) and (v_esc_ratio is None):
-                idces_rel_gas = (
-                    self.gas["Flow_Velocities"] > threshold_velocity
-                )
-            elif (threshold_velocity is None) and (v_esc_ratio is not None):
-                idces_rel_gas = (
-                    self.gas["Relative_Velocities_abs"]
-                    > v_esc_ratio * self.gas["v_esc"]
-                ) & (self.gas["Flow_Velocities"] > 0)
-            else:
-                raise ValueError(
-                    'Either "v_esc_ratio" or "threshold_velocity" but not both have to be "None"'
-                )
-            self.out_gas = map_to_new_dict(self.gas, idces_rel_gas)
-        return
-
-    def select_gas_group(self, group_num):
-        if self.out_gas["count"] == 0:
-            return self.gas
-        else:
-            idces_rel_gas = self.out_gas["group"] == group_num
-            rel_gas = map_to_new_dict(self.out_gas, idces_rel_gas)
+            idces_rel_gas = gas["group"] == group_num
+            rel_gas = map_to_new_dict(gas, idces_rel_gas)
         return rel_gas
 
-    def get_angular_momentum_direction(self):
+    def _get_angular_momentum_direction(self):
         idces_rel_stars = self.stars["Relative_Distances"] < self.scale_radius
         rel_stars = map_to_new_dict(self.stars, idces_rel_stars)
         ang_mom = (
             np.cross(
-                rel_stars["Relative_Coordinates"],
+                rel_stars["Coordinates"],
                 rel_stars["Relative_Velocities"],
             ).T
             * rel_stars["Masses"]
         )
         tot_ang_mom = np.sum(ang_mom, axis=1)
-        self.ang_mom_dir = tot_ang_mom / np.linalg.norm(tot_ang_mom)
-        return
+        ang_mom_dir = tot_ang_mom / np.linalg.norm(tot_ang_mom)
+        return ang_mom_dir
 
-    def rot_matrix_from_ang_mom(self):
+    def _rot_matrix_from_ang_mom(self, ang_mom_dir):
         z_axis = np.array([[0, 0, 1]])
-        self.ang_mom_dir = np.array([self.ang_mom_dir])
-        self.rotation, _ = R.align_vectors(z_axis, self.ang_mom_dir)
-        return
+        ang_mom_dir = np.array([ang_mom_dir])
+        rotation, _ = R.align_vectors(z_axis, ang_mom_dir)
+        return rotation
 
     def rotate_into_galactic_plane(self):
-        self.get_angular_momentum_direction()
-        self.rot_matrix_from_ang_mom()
-        self.gas["Relative_Coordinates"] = self.rotation.apply(
-            self.gas["Relative_Coordinates"]
-        )
-        self.gas["Relative_Velocities"] = self.rotation.apply(
+        ang_mom_dir = self._get_angular_momentum_direction()
+        rotation = self._rot_matrix_from_ang_mom(ang_mom_dir)
+        self.gas["Coordinates"] = rotation.apply(self.gas["Coordinates"])
+        self.gas["Relative_Velocities"] = rotation.apply(
             self.gas["Relative_Velocities"]
         )
-        return
-
-    # This is very hacky and should be adjusted in the future
-    def preprocess_for_gridding(self):
-        if "Abs_Coordinates" not in self.gas.keys():
-            self.gas["Abs_Coordinates"] = np.copy(self.gas["Coordinates"])
-        self.gas["Coordinates"]
-        self.gas["Coordinates"] = self.gas["Relative_Coordinates"]
-        if hasattr(self, "out_gas"):
-            self.out_gas["Coordinates"] = self.out_gas["Relative_Coordinates"]
-            if "Abs_Coordinates" not in self.out_gas.keys():
-                self.out_gas["Abs_Coordinates"] = np.copy(
-                    self.out_gas["Coordinates"]
-                )
         return
