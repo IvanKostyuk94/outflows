@@ -11,6 +11,7 @@ class GasGridder:
         self,
         gal,
         out_only=False,
+        quants=None,
         threshold_velocity=None,
         v_esc_ratio=None,
         grid_size=100,
@@ -18,6 +19,8 @@ class GasGridder:
         projection_angle=None,
         grouped_selection=False,
     ):
+        self._quants = quants
+
         self.gal = gal
         self.out_only = out_only
         self.threshold_velocity = threshold_velocity
@@ -26,7 +29,6 @@ class GasGridder:
         self.n_threads = n_threads
 
         self.grouped_selection = grouped_selection
-        self.get_gridding_quants()
 
         self.box_size = (
             0.7 * self.gal.cut_factor * self.gal.scale_radius * 2 * np.ones(3)
@@ -34,46 +36,59 @@ class GasGridder:
         self.shape = (grid_size * np.ones(3)).astype(np.int64)
         self.grid_cen = np.array([0, 0, 0])
 
-    def get_gridding_quants(self):
-        self.quants = [
-            "Temperature",
-            "GFM_Metallicity",
-            "Flow_Velocities",
-        ]
-        return
+    @property
+    def quants(self):
+        if self._quants is None:
+            self._quants = [
+                "Temperature",
+                "GFM_Metallicity",
+                "Flow_Velocities",
+                "Rot_Velocities",
+                "Angular_Velocities",
+            ]
+        return self._quants
 
     def get_gridded(self, gas):
         box_size_parts = [0, 0, 0]
+        skip_quants = {"StarFormationRate", "Masses"}
+        filtered_quants = [
+            quant for quant in self.quants if quant not in skip_quants
+        ]
+        if len(filtered_quants) == 0:
+            filtered_quants = None
         grids = gridding.depositParticlesOnGrid(
             gas_parts=gas,
             method="sphKernelDep",
-            quants=self.quants,
+            quants=filtered_quants,
             box_size_parts=box_size_parts,
             grid_shape=self.shape,
             grid_size=self.box_size,
             grid_cen=self.grid_cen,
             n_threads=self.n_threads,
         )
-
-        grid_sfr = gridding.depositParticlesOnGrid(
-            gas_parts=gas,
-            method="sphKernelDep",
-            quants=[],
-            box_size_parts=box_size_parts,
-            grid_shape=self.shape,
-            grid_size=self.box_size,
-            grid_cen=self.grid_cen,
-            n_threads=self.n_threads,
-            mass_key="StarFormationRate",
-        )
-        grids["StarFormationRate"] = grid_sfr["StarFormationRate"]
+        if "StarFormationRate" in self.quants:
+            grid_sfr = gridding.depositParticlesOnGrid(
+                gas_parts=gas,
+                method="sphKernelDep",
+                quants=[],
+                box_size_parts=box_size_parts,
+                grid_shape=self.shape,
+                grid_size=self.box_size,
+                grid_cen=self.grid_cen,
+                n_threads=self.n_threads,
+                mass_key="StarFormationRate",
+            )
+            grids["StarFormationRate"] = grid_sfr["StarFormationRate"]
         return grids
 
-    def remove_nans(self, grids):
+    def normalize(self, grids):
+        skip_quants = {"StarFormationRate", "Masses"}
         for quant in self.quants:
-            grids[quant] = np.where(
-                grids["Masses"] != 0, grids[quant] / grids["Masses"], 0
-            )
+            if quant not in skip_quants:
+                grids[quant] = np.where(
+                    grids["Masses"] != 0, grids[quant] / grids["Masses"], 0
+                )
+        print(np.sum(grids["StarFormationRate"]))
         return
 
     def grid_gas(self):
@@ -85,7 +100,7 @@ class GasGridder:
             )
 
         grids = self.get_gridded(gas=self.gal.gas)
-        self.remove_nans(grids)
+        self.normalize(grids)
         self.grids = grids
 
         if self.grouped_selection:
@@ -93,15 +108,15 @@ class GasGridder:
             all_grids.append(grids)
 
             galaxy_gridded = self.get_gridded(gas=self.gal.out_galaxy)
+            self.normalize(galaxy_gridded)
             all_grids.append(galaxy_gridded)
 
             outflow_gridded = self.get_gridded(gas=self.gal.out_gas)
+            self.normalize(outflow_gridded)
             all_grids.append(outflow_gridded)
 
-            for grids in all_grids:
-                self.remove_nans(grids)
             self.grids = all_grids
-            return
+        return
 
 
 # Ignore for now to be moved to to new class when developing projection
