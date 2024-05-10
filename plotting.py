@@ -21,6 +21,8 @@ def prop_labels(prop):
         "StarFormationRate": r"$\Sigma_\mathrm{SFR}[\log(M_\odot)\mathrm{yr}^{-1}\mathrm{kpc}^{-2}]$",
         "Temperature": r"$T[\log(K)]$",
         "GFM_Metallicity": r"$\log(Z)$",
+        "Rot_Velocities": r"$v_\mathrm{rot}$",
+        "Angular_Velocities": r"$\omega_\mathrm{rot}$",
     }
     return prop_labels[prop]
 
@@ -44,6 +46,16 @@ def plot_parameters_comp(prop):
         parameters["vmin"] = -250
         parameters["vcenter"] = 0
         parameters["vmax"] = 250
+
+    if prop == "Rot_Velocities":
+        parameters["vmin"] = 0
+        parameters["vcenter"] = 1500
+        parameters["vmax"] = 3000
+
+    if prop == "Angular_Velocities":
+        parameters["vmin"] = 0
+        parameters["vcenter"] = 300
+        parameters["vmax"] = 600
 
     elif prop == "Masses":
         parameters["vmin"] = 7.0
@@ -111,7 +123,7 @@ def get_mass_weighted_image(gas, axis, prop, log=False):
     data = gas[prop] * gas["Masses"]
     masses = gas["Masses"]
     image = np.where(
-        (data != 0).sum(axis) != 0,
+        data.sum(axis) != 0,
         np.true_divide(data.sum(axis), masses.sum(axis)),
         0,
     )
@@ -131,6 +143,18 @@ def get_prop_image(
     if prop == "Flow_Velocities":
         if general_image:
             image = get_mass_weighted_image(gas, axis, prop="Flow_Velocities")
+        else:
+            image = get_outflow_image(gas, axis)
+    if prop == "Rot_Velocities":
+        if general_image:
+            image = get_mass_weighted_image(gas, axis, prop="Rot_Velocities")
+        else:
+            image = get_outflow_image(gas, axis)
+    if prop == "Angular_Velocities":
+        if general_image:
+            image = get_mass_weighted_image(
+                gas, axis, prop="Angular_Velocities"
+            )
         else:
             image = get_outflow_image(gas, axis)
     elif prop == "GFM_Metallicity":
@@ -443,7 +467,9 @@ def plot_prop_maps_grouped(
         group_props=group_props,
         n_peak=n_peak,
     )
-    gridder = GasGridder(gal=gal, grid_size=grid_size, grouped_selection=True)
+    gridder = GasGridder(
+        gal=gal, grid_size=grid_size, grouped_selection=True, quants=props
+    )
     gridder.grid_gas()
 
     with_circle = False
@@ -625,3 +651,19 @@ def plot_outflow_histogram(
     plt.legend(fontsize=parameters["legendsize"])
     plt.show()
     return
+
+
+def plot_convergence(result_dict):
+    parameters = parameters_histogram()
+    figsize = (30, 8)
+
+    _, ax = plt.subplots(figsize=figsize)
+    ax.tick_params(
+        length=parameters["tick_major_size"],
+        width=parameters["tick_major_width"],
+    )
+    ax.tick_params(
+        length=parameters["tick_minor_size"],
+        width=parameters["tick_minor_width"],
+        which="minor",
+    )
