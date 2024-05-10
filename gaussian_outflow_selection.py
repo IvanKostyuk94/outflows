@@ -33,6 +33,7 @@ def normalize(data, key):
     lin_data = [
         "Flow_Velocities",
         "Rot_Velocities",
+        "Angular_Velocities",
         "Abs_Coordinates",
     ]
     log_data = [
@@ -57,7 +58,7 @@ def normalize(data, key):
 
 
 def get_data(gas, keys):
-    if len(keys) == 1:
+    if (len(keys) == 1) and (gas[keys[0]].ndim == 1):
         data = gas[keys[0]]
         data = data.reshape(-1, 1)
     else:
