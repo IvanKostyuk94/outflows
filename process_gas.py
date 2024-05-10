@@ -45,6 +45,7 @@ class Galaxy:
         self._out_gas = None
         self._selected_out_gas = None
         self._out_galaxy = None
+        self._ang_mom_dir = None
 
         self.df = df
         self.halo_id = halo_id
@@ -161,6 +162,24 @@ class Galaxy:
             _ = self.out_gas
         return self._out_galaxy
 
+    @property
+    def ang_mom_dir(self):
+        if self._ang_mom_dir is None:
+            idces_rel_stars = (
+                self.stars["Relative_Distances"] < self.scale_radius
+            )
+            rel_stars = map_to_new_dict(self.stars, idces_rel_stars)
+            ang_mom = (
+                np.cross(
+                    rel_stars["Coordinates"],
+                    rel_stars["Relative_Velocities"],
+                ).T
+                * rel_stars["Masses"]
+            )
+            tot_ang_mom = np.sum(ang_mom, axis=1)
+            self._ang_mom_dir = tot_ang_mom / np.linalg.norm(tot_ang_mom)
+        return self._ang_mom_dir
+
     def _select_moving_gas(self, threshold_velocity=None, v_esc_ratio=None):
         if self.gas["count"] == 0:
             return self.gas
@@ -229,10 +248,16 @@ class Galaxy:
         return
 
     def _get_rot_vel(self, gas):
-        gas["Rot_Velocities"] = np.sqrt(
-            gas["Relative_Velocities_abs"] ** 2 - gas["Flow_Velocities"] ** 2
+        ang_momementa = np.cross(
+            gas["Coordinates"],
+            gas["Relative_Velocities"],
+        ).T
+        gas["Rot_Velocities"] = np.float32(
+            np.dot(self.ang_mom_dir, ang_momementa)
         )
-        gas["Rot_Velocities"][np.isnan(gas["Rot_Velocities"])] = 0
+        gas["Angular_Velocities"] = np.float32(
+            (gas["Rot_Velocities"] / gas["Relative_Distances"])
+        )
         return
 
     def _get_hsml(self):
@@ -335,31 +360,28 @@ class Galaxy:
             rel_gas = map_to_new_dict(gas, idces_rel_gas)
         return rel_gas
 
-    def _get_angular_momentum_direction(self):
-        idces_rel_stars = self.stars["Relative_Distances"] < self.scale_radius
-        rel_stars = map_to_new_dict(self.stars, idces_rel_stars)
-        ang_mom = (
-            np.cross(
-                rel_stars["Coordinates"],
-                rel_stars["Relative_Velocities"],
-            ).T
-            * rel_stars["Masses"]
-        )
-        tot_ang_mom = np.sum(ang_mom, axis=1)
-        ang_mom_dir = tot_ang_mom / np.linalg.norm(tot_ang_mom)
-        return ang_mom_dir
-
-    def _rot_matrix_from_ang_mom(self, ang_mom_dir):
+    def _rot_matrix_from_ang_mom(self):
         z_axis = np.array([[0, 0, 1]])
-        ang_mom_dir = np.array([ang_mom_dir])
-        rotation, _ = R.align_vectors(z_axis, ang_mom_dir)
+        ang_mom_dir_vec = np.array([self.ang_mom_dir])
+        rotation, _ = R.align_vectors(z_axis, ang_mom_dir_vec)
         return rotation
 
     def rotate_into_galactic_plane(self):
-        ang_mom_dir = self._get_angular_momentum_direction()
-        rotation = self._rot_matrix_from_ang_mom(ang_mom_dir)
+        rotation = self._rot_matrix_from_ang_mom()
         self.gas["Coordinates"] = rotation.apply(self.gas["Coordinates"])
         self.gas["Relative_Velocities"] = rotation.apply(
             self.gas["Relative_Velocities"]
         )
         return
+
+    def get_outflow_mass(self):
+        out_mass = np.sum(self.out_gas["Masses"])
+        return out_mass
+
+    def get_average_outflow_vel(self, weighting="Masses"):
+        if weighting == "Luminosity":
+            weights = self.out_gas["Density"] * self.out_gas["Masses"]
+        else:
+            weights = self.out_gas[weighting]
+        v_mean = np.average(self.out_gas["Flow_Velocities"], weights=weights)
+        return v_mean
