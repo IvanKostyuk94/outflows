@@ -1,9 +1,8 @@
 import numpy as np
-from config import config
 from pyTNG import gridding
-from process_gas import Galaxy
 
-from scipy.spatial.transform import Rotation as R
+from utils import get_redshift, scale_factor
+from pyTNG.cosmology import TNGcosmo
 
 
 class GasGridder:
@@ -20,6 +19,7 @@ class GasGridder:
         grouped_selection=False,
     ):
         self._quants = quants
+        self._grids = None
 
         self.gal = gal
         self.out_only = out_only
@@ -48,7 +48,31 @@ class GasGridder:
             ]
         return self._quants
 
-    def get_gridded(self, gas):
+    @property
+    def grids(self):
+        if self._grids is None:
+            self.gal.rotate_into_galactic_plane()
+            if self.out_only:
+                self.gal.select_outflowing_gas(
+                    threshold_velocity=self.threshold_velocity,
+                    v_esc_ratio=self.v_esc_ratio,
+                )
+
+            grid = self._get_gridded(gas=self.gal.gas)
+            self._normalize(grid)
+            self._grids = [grid]
+
+            if self.grouped_selection:
+                galaxy_gridded = self._get_gridded(gas=self.gal.out_galaxy)
+                self._normalize(galaxy_gridded)
+                self._grids.append(galaxy_gridded)
+
+                outflow_gridded = self._get_gridded(gas=self.gal.out_gas)
+                self._normalize(outflow_gridded)
+                self._grids.append(outflow_gridded)
+        return self._grids
+
+    def _get_gridded(self, gas):
         box_size_parts = [0, 0, 0]
         skip_quants = {"StarFormationRate", "Masses"}
         filtered_quants = [
@@ -81,42 +105,72 @@ class GasGridder:
             grids["StarFormationRate"] = grid_sfr["StarFormationRate"]
         return grids
 
-    def normalize(self, grids):
+    def _normalize(self, grids):
         skip_quants = {"StarFormationRate", "Masses"}
         for quant in self.quants:
             if quant not in skip_quants:
                 grids[quant] = np.where(
                     grids["Masses"] != 0, grids[quant] / grids["Masses"], 0
                 )
-        print(np.sum(grids["StarFormationRate"]))
         return
 
-    def grid_gas(self):
-        self.gal.rotate_into_galactic_plane()
-        if self.out_only:
-            self.gal.select_outflowing_gas(
-                threshold_velocity=self.threshold_velocity,
-                v_esc_ratio=self.v_esc_ratio,
+    def get_pixel_length_abs(self):
+        a = scale_factor(self.gal.z)
+        pixel_length_com = self.box_size[0] / self.shape[0]
+        pixel_length_abs = pixel_length_com / TNGcosmo.h * a
+        return pixel_length_abs
+
+    def _get_surface_densities(self, number, dir):
+        gas = self.grids[number]["Masses"]
+        cell_size = self.get_pixel_length_abs()
+        tot_mass_ax = gas.sum(axis=dir) * 1e10 / TNGcosmo.h
+        surface_dens = np.log10(tot_mass_ax / cell_size**2 + 1e-9)
+        return surface_dens
+
+    def _get_sfr_densities(self, number, dir):
+        sfrs = self.grids[number]["StarFormationRate"]
+        cell_size = self.get_pixel_length_abs()
+        tot_mass_ax = sfrs.sum(axis=dir)
+        surface_dens = np.log10(tot_mass_ax / cell_size**2 + 1e-9)
+        return surface_dens
+
+    def _get_mass_weighted_image(self, number, dir, prop):
+        data = self.grids[number][prop] * self.grids[number]["Masses"]
+        masses = self.grids[number]["Masses"]
+        image = np.where(
+            data.sum(dir) != 0,
+            np.true_divide(data.sum(dir), masses.sum(dir)),
+            0,
+        )
+        log_props = {"GFM_Metallicity", "Temperature"}
+        if prop in log_props:
+            image = np.log10(image + 1e-20)
+        return image
+
+    def get_prop_image(
+        self,
+        number,
+        prop,
+        dir,
+    ):
+        mass_weighted_props = {
+            "Flow_Velocities",
+            "Rot_Velocities",
+            "Angular_Velocities",
+            "GFM_Metallicity",
+            "Temperature",
+        }
+        if prop in mass_weighted_props:
+            image = self._get_mass_weighted_image(number, dir, prop)
+        elif prop == "Masses":
+            image = self._get_surface_densities(number, dir)
+        elif prop == "StarFormationRate":
+            image = self._get_sfr_densities(number, dir)
+        else:
+            raise NotImplementedError(
+                f"The property {prop} is not implemented yet"
             )
-
-        grids = self.get_gridded(gas=self.gal.gas)
-        self.normalize(grids)
-        self.grids = grids
-
-        if self.grouped_selection:
-            all_grids = []
-            all_grids.append(grids)
-
-            galaxy_gridded = self.get_gridded(gas=self.gal.out_galaxy)
-            self.normalize(galaxy_gridded)
-            all_grids.append(galaxy_gridded)
-
-            outflow_gridded = self.get_gridded(gas=self.gal.out_gas)
-            self.normalize(outflow_gridded)
-            all_grids.append(outflow_gridded)
-
-            self.grids = all_grids
-        return
+        return image
 
 
 # Ignore for now to be moved to to new class when developing projection
