@@ -1,95 +1,82 @@
+import os
 import numpy as np
-from utils import (
-    get_halo,
-    autozoom,
-)
-from Grid_halo import (
-    retrieve_halo_gas,
-    cut_zoomed,
-    select_gas_group,
-    select_outflowing_gas,
-)
-from gaussian_outflow_selection import (
-    group_gas,
-    select_galaxy_group,
-    get_only_outflowing_gas,
-)
+import pandas as pd
+from config import config
+from process_gas import Galaxy
 
 
-def filter_out_gas(gas, n_peak, group_props=None):
-    out_gas = select_outflowing_gas(
-        gas, threshold_velocity=0, v_esc_ratio=None
-    )
-    if group_props is None:
-        group_props = [
-            "Flow_Velocities",
-            "Rot_Velocities",
-            "Temperature",
-            "Coordinates",
-        ]
-    group_gas(out_gas, props=group_props, peak_number=n_peak)
-    gas_groups = []
-    for i in range(np.max(out_gas["group"]) + 1):
-        gas_group = select_gas_group(out_gas, i)
-        gas_groups.append(gas_group)
+class OutflowPropUpdater:
+    def __init__(
+        self, df_name, snap=None, save_name=None, n_peak=3, group_props=None
+    ):
+        self.df_name = df_name
+        self.snap = snap
+        self.save_name = save_name
 
-    galaxy_group = select_galaxy_group(gas_groups)
-    out_gas = get_only_outflowing_gas(out_gas, galaxy_group)
-    return out_gas
+        self.n_peak = n_peak
+        self.group_props = group_props
 
+        self._df_path = None
+        self._save_path = None
+        self._df = None
 
-def outflow_mass_vout(
-    df,
-    halo_id,
-    snap,
-    zoom_in="autozoom",
-    n_peak=4,
-    group_props=None,
-    zoom_in_factor=20,
-):
+    @property
+    def df_path(self):
+        if self._df_path is None:
+            base_path = config["base_path"]
+            self._df_path = os.path.join(base_path, self.df_name)
+        return self._df_path
 
-    gas = retrieve_halo_gas(df=df, snap=snap, halo_id=halo_id)
+    @property
+    def save_path(self):
+        if self._save_path is None:
+            base_path = config["base_path"]
+            if self.save_name is None:
+                self._save_path = self.df_path
+            else:
+                self._save_path = os.path.join(base_path, self.save_name)
+        return self._save_path
 
-    halo = get_halo(df=df, snap=snap, halo_id=halo_id)
-    r_vir = float(halo.R_vir)
+    @property
+    def df(self):
+        if self._df is None:
+            self.df = pd.read_hdf(self.df_path)
+        return
 
-    if zoom_in == "autozoom":
-        zoom_in = autozoom(halo.R_vir, halo.Galaxy_HMR, factor=zoom_in_factor)
-        print(zoom_in)
-    gas = cut_zoomed(gas=gas, r_vir=r_vir, zoom_in=zoom_in)
-
-    out_gas = filter_out_gas(gas, n_peak=n_peak, group_props=group_props)
-    M_out = out_gas["Masses"].sum()
-    v_out_mean = np.average(
-        out_gas["Flow_Velocities"], weights=out_gas["Masses"]
-    )
-    return v_out_mean, M_out
-
-
-def add_outflow_parameters(df, snap=None):
-    if "v_out_mean" not in df.keys():
-        df["v_out_mean"] = np.nan * np.ones(len(df))
-    if "M_out" not in df.keys():
-        df["M_out"] = np.nan * np.ones(len(df))
-
-    if snap is not None:
-        iteration_df = df[df.snap == snap]
-    else:
-        iteration_df = df
-    for _, element in iteration_df:
-        halo_id = int(element.Halo_id)
-        snap = element.snap
-        v_out_mean, M_out = outflow_mass_vout(
-            df,
-            halo_id,
-            snap,
-            zoom_in="autozoom",
-            n_peak=4,
-            group_props=None,
-            zoom_in_factor=20,
+    def outflow_props(self, halo_id, snap):
+        gal = Galaxy(
+            df=self.df,
+            halo_id=halo_id,
+            snap=snap,
+            n_peak=self.n_peak,
+            group_props=self.group_props,
         )
-        df.loc[(df.snap == snap) & (df.Halo_id == halo_id)][
-            "v_out_mean"
-        ] = v_out_mean
-        df.loc[(df.snap == snap) & (df.Halo_id == halo_id)]["M_out"] = M_out
-    return
+        out_props = {}
+        out_props["M_out"] = gal.get_outflow_mass()
+        out_props["M_dot"] = gal.get_flow_rate()
+        out_props["v_lum"] = gal.get_average_outflow_vel(
+            weighting="Luminosity"
+        )
+        out_props["v_mass"] = gal.get_average_outflow_vel(weighting="Masses")
+        return out_props
+
+    def add_outflow_parameters(self):
+        if "v_out_mean" not in self.df.keys():
+            self.df["v_out_mean"] = np.nan * np.ones(len(self.df))
+        if "M_out" not in self.df.keys():
+            self.df["M_out"] = np.nan * np.ones(len(self.df))
+
+        if self.snap is not None:
+            iteration_df = self.df[self.df.snap == self.snap]
+        else:
+            iteration_df = self.df
+        for _, element in iteration_df:
+            halo_id = int(element.Halo_id)
+            snap = element.snap
+            out_props = self.outflow_props(halo_id, snap)
+            sel_gal = self.df.loc[
+                (self.df.snap == snap) & (self.df.Halo_id == halo_id)
+            ]
+            for key in sel_gal.keys():
+                sel_gal[key] = out_props[key]
+        return
