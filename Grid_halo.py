@@ -9,26 +9,17 @@ class GasGridder:
     def __init__(
         self,
         gal,
-        out_only=False,
         quants=None,
-        threshold_velocity=None,
-        v_esc_ratio=None,
         grid_size=100,
         n_threads=8,
         projection_angle=None,
-        grouped_selection=False,
     ):
         self._quants = quants
         self._grids = None
 
         self.gal = gal
-        self.out_only = out_only
-        self.threshold_velocity = threshold_velocity
-        self.v_esc_ratio = v_esc_ratio
 
         self.n_threads = n_threads
-
-        self.grouped_selection = grouped_selection
 
         self.box_size = (
             0.7 * self.gal.cut_factor * self.gal.scale_radius * 2 * np.ones(3)
@@ -51,18 +42,11 @@ class GasGridder:
     @property
     def grids(self):
         if self._grids is None:
-            self.gal.rotate_into_galactic_plane()
-            if self.out_only:
-                self.gal.select_outflowing_gas(
-                    threshold_velocity=self.threshold_velocity,
-                    v_esc_ratio=self.v_esc_ratio,
-                )
-
             grid = self._get_gridded(gas=self.gal.gas)
             self._normalize(grid)
             self._grids = [grid]
 
-            if self.grouped_selection:
+            if self.gal.out_gas_sel == "GMM":
                 galaxy_gridded = self._get_gridded(gas=self.gal.out_galaxy)
                 self._normalize(galaxy_gridded)
                 self._grids.append(galaxy_gridded)
@@ -70,6 +54,23 @@ class GasGridder:
                 outflow_gridded = self._get_gridded(gas=self.gal.out_gas)
                 self._normalize(outflow_gridded)
                 self._grids.append(outflow_gridded)
+
+                remain_gridded = self._get_gridded(gas=self.gal.remain_gas)
+                print(self.gal.remain_gas["count"])
+                self._normalize(remain_gridded)
+                self._grids.append(remain_gridded)
+
+            elif (self.gal.out_gas_sel == "v_esc_ratio") or (
+                self.gal.out_gas_sel == "v_crit"
+            ):
+                outflow_gridded = self._get_gridded(gas=self.gal.out_gas)
+                self._normalize(outflow_gridded)
+                self._grids.append(outflow_gridded)
+
+                remain_gridded = self._get_gridded(gas=self.gal.remain_gas)
+                self._normalize(remain_gridded)
+                self._grids.append(remain_gridded)
+
         return self._grids
 
     def _get_gridded(self, gas):
