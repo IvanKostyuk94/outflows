@@ -31,10 +31,10 @@ class Galaxy:
         halo_id,
         snap,
         cut_factor=10,
-        n_peak=4,
+        n_peak=3,
         group_props=None,
         out_gas_sel="GMM",
-        v_esc_ratio=None,
+        v_esc_ratio=0.3,
     ):
 
         self._halo = None
@@ -43,8 +43,9 @@ class Galaxy:
         self._stars = None
         self._gas = None
         self._out_gas = None
-        self._selected_out_gas = None
         self._out_galaxy = None
+        self._cold_out_gas = None
+        self._remain_gas = None
         self._ang_mom_dir = None
 
         self.df = df
@@ -115,17 +116,19 @@ class Galaxy:
                 self.sim_path, self.snap, self.halo_id, "gas"
             )
             if self.out_gas_sel == "v_esc_ratio":
-                self._get_gas_v_esc(self, self._gas)
+                self._get_gas_v_esc(self._gas)
 
             self._get_relative_coordinates(self._gas)
             self._get_relative_distances(self._gas)
             self._gas = self._cut_gal_scale(self._gas)
+            self._set_idces(self._gas)
             self._get_velocities(self._gas)
             self._get_dir(self._gas)
             self._get_flow(self._gas)
             self._get_rot_vel(self._gas)
             gas_temperature.gasTemp(self._gas)
             self._get_hsml()
+            self._gas = self.rotate_into_galactic_plane(self._gas)
         return self._gas
 
     # Selects all gas that is moving out: v_out>0
@@ -151,6 +154,27 @@ class Galaxy:
                     threshold_velocity=self.v_esc_ratio
                 )
         return self._out_gas
+
+    @property
+    def cold_out_gas(self):
+        if self._cold_out_gas is None:
+            idces_cold = (1e4 < self.out_gas["Temperature"]) & (
+                self.out_gas["Temperature"] < 1e5
+            )
+            self._cold_out_gas = map_to_new_dict(self._out_gas, idces_cold)
+        return self._cold_out_gas
+
+    @property
+    def remain_gas(self):
+        if self._remain_gas is None:
+            overlap_indices = np.setdiff1d(
+                self.gas["idces"], self.out_gas["idces"]
+            )
+            result_array = np.full_like(self.gas["idces"], False, dtype=bool)
+            remain_idces = np.isin(self.gas["idces"], overlap_indices)
+            result_array[remain_idces] = True
+            self._remain_gas = map_to_new_dict(self.gas, result_array)
+        return self._remain_gas
 
     """Selects the part of the central galaxy that is outflowing.
     I only use it for some tests and it only works for GMM selection
@@ -179,6 +203,10 @@ class Galaxy:
             tot_ang_mom = np.sum(ang_mom, axis=1)
             self._ang_mom_dir = tot_ang_mom / np.linalg.norm(tot_ang_mom)
         return self._ang_mom_dir
+
+    def _set_idces(self, gas):
+        gas["idces"] = np.arange(gas["count"])
+        return
 
     def _select_moving_gas(self, threshold_velocity=None, v_esc_ratio=None):
         if self.gas["count"] == 0:
@@ -209,8 +237,9 @@ class Galaxy:
         return gas
 
     def _get_relative_coordinates(self, particles):
-        particles["Abs_Coordinates"] = np.copy(particles["Coordinates"])
-        particles["Coordinates"] = particles["Coordinates"] - self.gal_pos
+        if "Abs_Coordinates" not in particles.keys():
+            particles["Abs_Coordinates"] = np.copy(particles["Coordinates"])
+            particles["Coordinates"] = particles["Coordinates"] - self.gal_pos
         return
 
     def _get_relative_distances(self, particles):
@@ -223,7 +252,6 @@ class Galaxy:
         particles["Velocities"] = particles["Velocities"] * np.sqrt(
             scale_factor(self.z)
         )
-
         particles["Relative_Velocities"] = (
             particles["Velocities"] - self.gal_vel.T
         )
@@ -282,7 +310,7 @@ class Galaxy:
         galaxy_group = gas_groups[galaxy_group_num]
         return galaxy_group_num, galaxy_group
 
-    def build_all_particles_dict(self, halo_particles):
+    def _build_all_particles_dict(self, halo_particles):
         tot_num = np.sum(particles["count"] for particles in halo_particles)
         all_particles = {}
         all_particles["Masses"] = np.empty(tot_num)
@@ -319,7 +347,7 @@ class Galaxy:
             self.sim_path, self.snap, self.halo_id, "stars"
         )
         halo_particles = [gas, dm, stars]
-        all_particles = self.build_all_particles_dict(self, halo_particles)
+        all_particles = self._build_all_particles_dict(halo_particles)
         all_particles["Masses_Cum"] = np.cumsum(all_particles["Masses"])
 
         all_particles["Relative_Distances_km"] = get_dist_in_km(
@@ -366,22 +394,39 @@ class Galaxy:
         rotation, _ = R.align_vectors(z_axis, ang_mom_dir_vec)
         return rotation
 
-    def rotate_into_galactic_plane(self):
+    def rotate_into_galactic_plane(self, gas):
         rotation = self._rot_matrix_from_ang_mom()
-        self.gas["Coordinates"] = rotation.apply(self.gas["Coordinates"])
-        self.gas["Relative_Velocities"] = rotation.apply(
-            self.gas["Relative_Velocities"]
-        )
-        return
+        gas["Coordinates"] = rotation.apply(gas["Coordinates"])
+        gas["Relative_Velocities"] = rotation.apply(gas["Relative_Velocities"])
+        return gas
 
-    def get_outflow_mass(self):
-        out_mass = np.sum(self.out_gas["Masses"])
+    def get_outflow_mass(self, cold_only=False):
+        if cold_only:
+            gas = self.cold_out_gas
+        else:
+            gas = self.out_gas
+        out_mass = np.sum(gas["Masses"])
         return out_mass
 
-    def get_average_outflow_vel(self, weighting="Masses"):
-        if weighting == "Luminosity":
-            weights = self.out_gas["Density"] * self.out_gas["Masses"]
+    def get_average_outflow_vel(self, weighting="Masses", cold_only=False):
+        if cold_only:
+            gas = self.cold_out_gas
         else:
-            weights = self.out_gas[weighting]
-        v_mean = np.average(self.out_gas["Flow_Velocities"], weights=weights)
+            gas = self.out_gas
+        if weighting == "Luminosity":
+            weights = gas["Density"] * gas["Masses"]
+        else:
+            weights = gas[weighting]
+        try:
+            v_mean = np.average(gas["Flow_Velocities"], weights=weights)
+        except ZeroDivisionError:
+            v_mean = None
         return v_mean
+
+    def get_flow_rate(self, cold_only=False):
+        if cold_only:
+            gas = self.cold_out_gas
+        else:
+            gas = self.out_gas
+        m_dot = np.sum(gas["Masses"] * gas["Flow_Velocities"])
+        return m_dot
