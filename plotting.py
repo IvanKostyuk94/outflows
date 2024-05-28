@@ -1,9 +1,11 @@
 from matplotlib import pyplot as plt
 from matplotlib import colors
 from matplotlib import colormaps
+import numpy as np
+import pandas as pd
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
-
+from utils import get_redshift
 from Grid_halo import GasGridder
 from process_gas import Galaxy
 
@@ -17,6 +19,17 @@ def prop_labels(prop):
         "GFM_Metallicity": r"$\log(Z)$",
         "Rot_Velocities": r"$v_\mathrm{rot}$",
         "Angular_Velocities": r"$\omega_\mathrm{rot}$",
+        "Galaxy_M_star": r"$M_\star[\log(M_\odot)]$",
+        "Galaxy_SFR": r"SFR$[M_\odot/\mathrm{yr}]$",
+        "M_star_log": r"$M_\star[\log(M_\odot)]$",
+        "v_lum": r"$\langle v \rangle_\mathrm{lum}[\mathrm{km}/\mathrm{s}]$",
+        "v_lum_cold": r"$\langle v \rangle_\mathrm{lum}[\mathrm{km}/\mathrm{s}]$",
+        "v_mass": r"$\langle v \rangle_\mathrm{M}[\mathrm{km}/\mathrm{s}]$",
+        "v_mass_cold": r"$\langle v \rangle_\mathrm{M}[\mathrm{km}/\mathrm{s}]$",
+        "M_out": r"$M_\mathrm{out}[M_\odot]$",
+        "M_out_cold": r"$M_\mathrm{out}[M_\odot]$",
+        "M_dot": r"$\dot{M}_\mathrm{out}[M_\odot\mathrm{km}/\mathrm{s}]$",
+        "M_dot_cold": r"$\dot{M}_\mathrm{out}[M_\odot\mathrm{km}/\mathrm{s}]$",
     }
     return prop_labels[prop]
 
@@ -42,9 +55,9 @@ def get_ranges(prop, parameters):
         parameters["vmax"] = 600
 
     elif prop == "Masses":
-        parameters["vmin"] = 6.0
-        parameters["vcenter"] = 7.5
-        parameters["vmax"] = 9
+        parameters["vmin"] = 7.0
+        parameters["vcenter"] = 8.5
+        parameters["vmax"] = 10
 
     # elif prop == "Masses":
     #     parameters["vmin"] = 4.0
@@ -68,18 +81,21 @@ def get_ranges(prop, parameters):
     return
 
 
-def plot_parameters_comp(prop):
+def plot_parameters_comp(prop=None):
     parameters = {}
 
     parameters["titlesize"] = 30
+    parameters["label_fontsize"] = 30
 
     parameters["colorbar_labelsize"] = 25
     parameters["colorbar_ticklabelsize"] = 15
+    parameters["ticklabelsize"] = 20
 
     parameters["height_per_image"] = 6
     parameters["width_per_image"] = 6
 
-    get_ranges(prop, parameters)
+    if prop is not None:
+        get_ranges(prop, parameters)
 
     return parameters
 
@@ -224,14 +240,92 @@ def plot_prop_maps(gridder, prop, dirs, sizebar_length=1):
     return
 
 
+def get_data(df, prop_x, prop_y, bins, by_z=False):
+    log_properties = {"M_out", "M_dot", "M_out_cold", "M_dot_cold"}
+    df = df[~np.isnan(df[prop_y])]
+    df = df[(df.snap < 26) & (df.snap > 16)]
+    df["bin"] = pd.cut(df[prop_x], bins=bins)
+    x_centers = df["bin"].apply(lambda x: x.mid).unique()
+    sorted_indices = np.argsort(x_centers)
+    x_centers = x_centers[sorted_indices]
+    y_means_all = []
+    y_errors_all = []
+    labels = []
+    if by_z:
+        for i in range(17, 26):
+            sub_df = df[df.snap == i]
+            z = get_redshift(i)
+            label = f"z = {z:.1f}"
+            if prop_y in log_properties:
+                values = np.log10(sub_df.groupby("bin")[prop_y])
+            else:
+                values = sub_df.groupby("bin")[prop_y]
+            y_means = values.quantile(0.75)
+            y_means = np.array(y_means)
+            # y_means = values.mean()
+            y_errors = values.sem()
+            y_means_all.append(y_means)
+            y_errors_all.append(y_errors)
+            labels.append(label)
+    else:
+        label = "z = 3-5"
+        if prop_y in log_properties:
+            values = np.log10(df.groupby("bin")[prop_y])
+        else:
+            values = df.groupby("bin")[prop_y]
+
+        y_means = values.quantile(q=0.5)
+        y_errors = values.sem()
+        y_means_all.append(y_means)
+        y_errors_all.append(y_errors)
+        labels.append(label)
+    return x_centers, y_means_all, y_errors_all, labels
+
+
+def plot_prop_correlation(df, prop_x, prop_y, bins=20, by_z=False, stepsize=1):
+    x_centers, y_means_all, y_errors_all, labels = get_data(
+        df=df, prop_x=prop_x, prop_y=prop_y, bins=bins, by_z=by_z
+    )
+    fig, ax = plt.subplots(figsize=(15, 10))
+    if not by_z:
+        ax.scatter(df[prop_x], df[prop_y], s=1, alpha=0.3, color="red")
+    for i in range(0, len(y_means_all), stepsize):
+        # ax.errorbar(
+        #     x_centers,
+        #     y_means_all[i],
+        #     yerr=y_errors_all[i],
+        #     fmt="o-",
+        #     capsize=5,
+        #     linewidth=3,
+        #     label=labels[i],
+        # )
+        ax.plot(
+            x_centers,
+            y_means_all[i],
+            linewidth=3,
+            label=labels[i],
+        )
+
+    parameters = plot_parameters_comp()
+    ax.set_xlabel(prop_labels(prop_x), fontsize=parameters["label_fontsize"])
+    ax.set_ylabel(prop_labels(prop_y), fontsize=parameters["label_fontsize"])
+    ax.tick_params(labelsize=parameters["ticklabelsize"])
+    ax.set_ylim(0, 300)
+    ax.set_xlim(7.5, 11)
+    ax.legend(fontsize=15)
+
+    return
+
+
 def plot_prop_maps_grouped(
     halo_id,
     df,
     snap,
     props,
     grid_size=100,
+    method="GMM",
     group_props=None,
-    n_peak=None,
+    n_peak=3,
     dirs=[1, 2],
     sizebar_length=1,
 ):
@@ -242,10 +336,10 @@ def plot_prop_maps_grouped(
         snap=snap,
         group_props=group_props,
         n_peak=n_peak,
+        out_gas_sel=method,
+        with_rotation=True,
     )
-    gridder = GasGridder(
-        gal=gal, grid_size=grid_size, grouped_selection=True, quants=props
-    )
+    gridder = GasGridder(gal=gal, grid_size=grid_size, quants=props)
     for prop in props:
         plot_prop_maps(gridder, prop, dirs, sizebar_length)
     return
