@@ -29,7 +29,7 @@ class R_SFR_Updater:
         return
 
     def save_df(self):
-        self.df.to_hdf(self.save_path, "galaxies")
+        self.df.to_hdf(self.save_path, config["hdf_key"])
         return
 
     def compute_sfr_radius(self, particles, tot_sfr):
