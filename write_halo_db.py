@@ -16,7 +16,12 @@ class GalaxyWriter:
     @property
     def data_of_interest(self):
         if self._data_of_interest is None:
-            self._data_of_interest = {"full_galaxy", "out_galaxy", "out_gas"}
+            self._data_of_interest = {
+                "full_galaxy",
+                "out_galaxy",
+                "out_gas",
+                "remain_gas",
+            }
         return self._data_of_interest
 
     @property
@@ -41,10 +46,15 @@ class GalaxyWriter:
                 self._data_dict["out_gas"] = self._select_keys_of_interest(
                     self.galaxy.out_gas
                 )
+            if "remain_gas" in self.data_of_interest:
+                self._data_dict["remain_gas"] = self._select_keys_of_interest(
+                    self.galaxy.remain_gas
+                )
         return self._data_dict
 
     def _select_keys_of_interest(self, gas):
         keys = [
+            "idces",
             "Coordinates",
             "Velocities",
             "Masses",
