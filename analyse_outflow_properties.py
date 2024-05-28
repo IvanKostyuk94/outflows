@@ -7,14 +7,21 @@ from process_gas import Galaxy
 
 class OutflowPropUpdater:
     def __init__(
-        self, df_name, snap=None, save_name=None, n_peak=3, group_props=None
+        self,
+        df_name,
+        save_name=None,
+        n_peak=3,
+        group_props=None,
+        snap_range=None,
+        with_quantile=False,
     ):
         self.df_name = df_name + config["hdf_ending"]
-        self.snap = snap
+        self.snap_range = snap_range
         self.save_name = save_name
 
         self.n_peak = n_peak
         self.group_props = group_props
+        self.with_quantile = with_quantile
 
         self._df_path = None
         self._save_path = None
@@ -34,7 +41,9 @@ class OutflowPropUpdater:
             if self.save_name is None:
                 self._save_path = self.df_path
             else:
-                self._save_path = os.path.join(base_path, self.save_name)
+                self._save_path = os.path.join(
+                    base_path, self.save_name + config["hdf_ending"]
+                )
         return self._save_path
 
     @property
@@ -51,46 +60,122 @@ class OutflowPropUpdater:
             n_peak=self.n_peak,
             group_props=self.group_props,
         )
+        keys = [
+            "M_out",
+            "M_dot",
+            "v_lum",
+            "v_mass",
+            "M_out_cold",
+            "M_dot_cold",
+            "v_lum_cold",
+            "v_mass_cold",
+        ]
         out_props = {}
-        out_props["M_out"] = gal.get_outflow_mass()
-        out_props["M_dot"] = gal.get_flow_rate()
-        out_props["v_lum"] = gal.get_average_outflow_vel(
-            weighting="Luminosity"
-        )
-        out_props["v_mass"] = gal.get_average_outflow_vel(weighting="Masses")
-        out_props["M_out_cold"] = gal.get_outflow_mass(cold_only=True)
-        out_props["M_dot_cold"] = gal.get_flow_rate(cold_only=True)
-        out_props["v_lum_cold"] = gal.get_average_outflow_vel(
-            weighting="Luminosity", cold_only=True
-        )
-        out_props["v_mass_cold"] = gal.get_average_outflow_vel(
-            weighting="Masses", cold_only=True
-        )
+        try:
+            out_props["M_out"] = gal.get_outflow_mass()
+            out_props["M_dot"] = gal.get_flow_rate()
+            out_props["v_lum"] = gal.get_average_outflow_vel(
+                weighting="Luminosity"
+            )
+            out_props["v_mass"] = gal.get_average_outflow_vel(
+                weighting="Masses"
+            )
+            out_props["M_out_cold"] = gal.get_outflow_mass(cold_only=True)
+            out_props["M_dot_cold"] = gal.get_flow_rate(cold_only=True)
+            out_props["v_lum_cold"] = gal.get_average_outflow_vel(
+                weighting="Luminosity", cold_only=True
+            )
+            out_props["v_mass_cold"] = gal.get_average_outflow_vel(
+                weighting="Masses", cold_only=True
+            )
+        except:
+            for key in keys:
+                out_props[key] = None
         return out_props
 
-    def create_key_column(self, key):
+    def quantile_outflow_props(self, halo_id, snap):
+        gal = Galaxy(
+            df=self.df,
+            halo_id=halo_id,
+            snap=snap,
+            n_peak=self.n_peak,
+            group_props=self.group_props,
+        )
+        keys = []
+        out_vels = {}
+        quantiles = [0.5, 0.75, 0.9]
+        weightings = ["Luminosity", "Masses", "Flux"]
+        subscripts = ["lum", "mass", "mdot"]
+        temps = ["", "_cold"]
+        for sub, weighting in zip(subscripts, weightings):
+            for quantile in quantiles:
+                for i, temp in enumerate(temps):
+                    column_name = f"v_{sub}_{int(quantile*100)}{temp}"
+                    keys.append(column_name)
+        try:
+            for sub, weighting in zip(subscripts, weightings):
+                for quantile in quantiles:
+                    for i, temp in enumerate(temps):
+                        column_name = f"v_{sub}_{int(quantile*100)}{temp}"
+                        out_vels[column_name] = gal.get_quantile_velocity(
+                            quantile, weighting=weighting, cold_only=bool(i)
+                        )
+        except:
+            for key in keys:
+                out_vels[key] = None
+        return out_vels
+
+    def _create_key_column(self, key):
         if key not in self.df.keys():
             self.df[key] = np.nan * np.ones(len(self.df))
         return
 
+    def _has_value(self, halo_id, snap):
+        try:
+            if self.with_quantile:
+                column = "v_lum_50"
+            else:
+                column = "M_out"
+            value = self.df.loc[
+                (self.df.snap == snap) & (self.df.Halo_id == halo_id), column
+            ]
+            if np.isnan(value.values[0]):
+                return False
+            else:
+                return True
+        except KeyError:
+            return False
+
     def add_outflow_parameters(self):
-        if "v_out_mean" not in self.df.keys():
-            self.df["v_out_mean"] = np.nan * np.ones(len(self.df))
-        if "M_out" not in self.df.keys():
-            self.df["M_out"] = np.nan * np.ones(len(self.df))
-        if self.snap is not None:
-            iteration_df = self.df[self.df.snap == self.snap]
+        if self.snap_range is not None:
+            iteration_df = self.df[
+                (self.df.snap >= self.snap_range[0])
+                & (self.df.snap <= self.snap_range[1])
+                & (self.df.M_star_log > 7.5)
+            ]
         else:
             iteration_df = self.df
+        counter = 0
         for _, element in iteration_df.iterrows():
+            counter += 1
             halo_id = int(element.Halo_id)
             snap = int(element.snap)
-            out_props = self.outflow_props(halo_id, snap)
+            if self._has_value(halo_id=halo_id, snap=snap):
+                continue
+            if self.with_quantile:
+                out_props = self.quantile_outflow_props(halo_id, snap)
+            else:
+                out_props = self.outflow_props(halo_id, snap)
             for key in out_props.keys():
-                self.create_key_column(key)
+                self._create_key_column(key)
                 self.df.loc[
                     (self.df.snap == snap) & (self.df.Halo_id == halo_id), key
                 ] = out_props[key]
+            if counter % 100 == 0:
+                print(
+                    f"Processed {counter/len(iteration_df)*100:.2f}% of galaxies"
+                )
+                self.save_df()
         return
 
     def save_df(self):
@@ -98,6 +183,11 @@ class OutflowPropUpdater:
 
 
 if __name__ == "__main__":
-    updater = OutflowPropUpdater("all_galaxies_new")
+    updater = OutflowPropUpdater(
+        "all_galaxies_new",
+        save_name="all_galaxies_extended",
+        snap_range=[17, 25],
+        with_quantile=True,
+    )
     updater.add_outflow_parameters()
     updater.save_df()
