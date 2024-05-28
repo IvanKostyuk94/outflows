@@ -1,3 +1,4 @@
+import warnings
 import numpy as np
 import illustris_python as il
 from pyTNG import gas_temperature
@@ -21,7 +22,6 @@ from utils import (
 
 
 class Galaxy:
-
     _, sim_path = get_sim()
     out_gas_selections = ["GMM", "v_esc_ratio", "v_crit"]
 
@@ -35,6 +35,7 @@ class Galaxy:
         group_props=None,
         out_gas_sel="GMM",
         v_esc_ratio=0.3,
+        with_rotation=False,
     ):
 
         self._halo = None
@@ -59,6 +60,7 @@ class Galaxy:
         self.group_props = group_props
         self.v_esc_ratio = v_esc_ratio
         self.z = get_redshift(self.snap)
+        self.with_rotation = with_rotation
         if out_gas_sel in self.out_gas_selections:
             self.out_gas_sel = out_gas_sel
         else:
@@ -128,7 +130,8 @@ class Galaxy:
             self._get_rot_vel(self._gas)
             gas_temperature.gasTemp(self._gas)
             self._get_hsml()
-            self._gas = self.rotate_into_galactic_plane(self._gas)
+            if self.with_rotation:
+                self._gas = self.rotate_into_galactic_plane(self._gas)
         return self._gas
 
     # Selects all gas that is moving out: v_out>0
@@ -395,7 +398,9 @@ class Galaxy:
         return rotation
 
     def rotate_into_galactic_plane(self, gas):
-        rotation = self._rot_matrix_from_ang_mom()
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            rotation = self._rot_matrix_from_ang_mom()
         gas["Coordinates"] = rotation.apply(gas["Coordinates"])
         gas["Relative_Velocities"] = rotation.apply(gas["Relative_Velocities"])
         return gas
@@ -415,6 +420,8 @@ class Galaxy:
             gas = self.out_gas
         if weighting == "Luminosity":
             weights = gas["Density"] * gas["Masses"]
+        elif weighting is None:
+            weights = np.ones_like(gas["Flow_Velocities"])
         else:
             weights = gas[weighting]
         try:
@@ -422,6 +429,40 @@ class Galaxy:
         except ZeroDivisionError:
             v_mean = None
         return v_mean
+
+    def _get_quantile_vout(self, gas, weights, quantile):
+        sorted_indices = np.argsort(gas["Flow_Velocities"])
+        sorted_velocities = gas["Flow_Velocities"][sorted_indices]
+        sorted_weights = weights[sorted_indices]
+        weights_summed = np.cumsum(sorted_weights)
+        total_weight = weights_summed[-1]
+        threshold_weight = total_weight * quantile
+        velocity_threshold_index = np.searchsorted(
+            weights_summed, threshold_weight, side="right"
+        )
+        v_out = sorted_velocities[velocity_threshold_index]
+        return v_out
+
+    def get_quantile_velocity(self, quantile, weighting=None, cold_only=False):
+        if cold_only:
+            gas = self.cold_out_gas
+        else:
+            gas = self.out_gas
+        try:
+            if weighting == "Flux":
+                weights = gas["Masses"] * gas["Flow_Velocities"]
+            elif weighting == "Masses":
+                weights = gas["Masses"]
+            elif weighting == "Luminosity":
+                weights = gas["Density"] * gas["Masses"]
+            elif weighting is None:
+                weights = np.ones_like(gas["Flow_Velocities"])
+            else:
+                raise NotImplementedError
+            v_out = self._get_quantile_vout(gas, weights, quantile)
+        except ZeroDivisionError:
+            v_out = None
+        return v_out
 
     def get_flow_rate(self, cold_only=False):
         if cold_only:
