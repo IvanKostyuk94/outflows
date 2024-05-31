@@ -53,10 +53,16 @@ class Galaxy:
         self.halo_id = halo_id
         self.snap = snap
         self.galaxy_id = int(self.halo.idx)
-        self.scale_radius = float(self.halo.r_SFR)
+        # self.scale_radius = float(self.halo.r_SFR)
+
+        if self.halo.M_star_log.values[0] < 9:
+            self.scale_radius = float(self.halo.r_SFR)
+            self.n_peak = 3
+        elif self.halo.M_star_log.values[0] > 9:
+            self.scale_radius = float(self.halo.Galaxy_GHMR) / 10
+            self.n_peak = 2
         self.cut_factor = cut_factor
         self.r_vir = float(self.halo.R_vir)
-        self.n_peak = n_peak
         self.group_props = group_props
         self.v_esc_ratio = v_esc_ratio
         self.z = get_redshift(self.snap)
