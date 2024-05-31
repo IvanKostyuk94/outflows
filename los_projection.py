@@ -1,5 +1,6 @@
 import numpy as np
 from process_gas import Galaxy
+from scipy.spatial.transform import Rotation as R
 
 """Project the galactic gas as well as the outflow gas along the
 line of sight of the observer. After the initial rotation during the 
@@ -11,8 +12,25 @@ the galaxy edge on.
 
 
 class GalaxyProjections(Galaxy):
-    def __init__(self, df, halo_id, snap, projection_angle):
-        super().__init__(df, halo_id, snap, with_rotation=True)
+    def __init__(
+        self,
+        df,
+        halo_id,
+        snap,
+        projection_angle,
+        group_props=None,
+        n_peak=3,
+        out_gas_sel="GMM",
+    ):
+        super().__init__(
+            df,
+            halo_id,
+            snap,
+            with_rotation=True,
+            group_props=group_props,
+            n_peak=n_peak,
+            out_gas_sel=out_gas_sel,
+        )
         self.angle = projection_angle
 
         self._projected_outflows = None
@@ -27,14 +45,30 @@ class GalaxyProjections(Galaxy):
             )
         return self._view_dir
 
+    def line_of_sight_projection(self):
+        z_axis = np.array([[0, 0, 1]])
+        rotation, _ = R.align_vectors(z_axis, np.array([self.view_dir]))
+        self.gas["Coordinates"] = rotation.apply(self.gas["Coordinates"])
+        self.gas["Relative_Velocities"] = rotation.apply(
+            self.gas["Relative_Velocities"]
+        )
+
+        self.out_gas["Coordinates"] = rotation.apply(
+            self.out_gas["Coordinates"]
+        )
+        self.out_gas["Relative_Velocities"] = rotation.apply(
+            self.out_gas["Relative_Velocities"]
+        )
+        return
+
     def project_outflows(self):
-        self.out_gas["los_Velocities"] = np.dot(
-            self.out_gas["Relative_Velocities"], self.view_dir
+        self.out_gas["los_Velocities"] = np.float32(
+            np.dot(self.out_gas["Relative_Velocities"], self.view_dir)
         )
-        self.gas["los_Velocities"] = np.dot(
-            self.gas["Relative_Velocities"], self.view_dir
+        self.gas["los_Velocities"] = np.float32(
+            np.dot(self.gas["Relative_Velocities"], self.view_dir)
         )
-        self.remain_gas["los_Velocities"] = np.dot(
-            self.remain_gas["Relative_Velocities"], self.view_dir
+        self.remain_gas["los_Velocities"] = np.float32(
+            np.dot(self.remain_gas["Relative_Velocities"], self.view_dir)
         )
         return
