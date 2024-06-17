@@ -2,6 +2,7 @@ import warnings
 import numpy as np
 import illustris_python as il
 from pyTNG import gas_temperature
+from pyTNG.cosmology import TNGcosmo
 from scipy.spatial.transform import Rotation as R
 from scipy.integrate import cumtrapz
 from gaussian_outflow_selection import (
@@ -31,7 +32,6 @@ class Galaxy:
         halo_id,
         snap,
         cut_factor=10,
-        n_peak=3,
         group_props=None,
         out_gas_sel="GMM",
         v_esc_ratio=0.3,
@@ -55,18 +55,23 @@ class Galaxy:
         self.galaxy_id = int(self.halo.idx)
         # self.scale_radius = float(self.halo.r_SFR)
 
-        if self.halo.M_star_log.values[0] < 9:
-            self.scale_radius = float(self.halo.r_SFR)
-            self.n_peak = 3
-        elif self.halo.M_star_log.values[0] > 9:
-            self.scale_radius = float(self.halo.Galaxy_GHMR) / 10
-            self.n_peak = 2
         self.cut_factor = cut_factor
         self.r_vir = float(self.halo.R_vir)
         self.group_props = group_props
         self.v_esc_ratio = v_esc_ratio
         self.z = get_redshift(self.snap)
         self.with_rotation = with_rotation
+        self.critical_velocity = 50
+
+        if self.halo.M_star_log.values[0] < 9:
+            self.scale_radius = float(self.halo.r_SFR)
+            self.n_peak = 3
+        elif self.halo.M_star_log.values[0] > 9:
+            self.scale_radius = float(self.halo.Galaxy_GHMR) / 10
+            self.n_peak = 2
+        self.cut_r = self.cut_factor * self.scale_radius
+        if self.cut_r > self.r_vir:
+            self.cut_r = self.r_vir
         if out_gas_sel in self.out_gas_selections:
             self.out_gas_sel = out_gas_sel
         else:
@@ -152,7 +157,9 @@ class Galaxy:
                     galaxy_groups
                 )
                 self._out_gas = get_only_outflowing_gas(
-                    all_out_gas, galaxy_group=galaxy_group_num
+                    all_out_gas,
+                    galaxy_group=galaxy_group_num,
+                    crit_vout=self.critical_velocity,
                 )
             elif self.out_gas_sel == "v_esc_ratio":
                 self._out_gas = self._select_moving_gas(
@@ -238,10 +245,7 @@ class Galaxy:
             return moving_gas
 
     def _cut_gal_scale(self, gas):
-        max_r = self.cut_factor * self.scale_radius
-        if max_r > self.r_vir:
-            max_r = self.r_vir
-        relevant_gas = gas["Relative_Distances"] < max_r
+        relevant_gas = gas["Relative_Distances"] < self.cut_r
         gas = map_to_new_dict(gas, relevant_gas)
         return gas
 
@@ -255,6 +259,10 @@ class Galaxy:
         particles["Relative_Distances"] = np.sqrt(
             np.sum(np.square(particles["Coordinates"]), axis=1)
         )
+        particles["SFR_dist"] = particles["Relative_Distances"] / float(
+            self.halo.r_SFR
+        )
+        particles["SFR_dist"][particles["SFR_dist"] < 1] = 1
         return
 
     def _get_velocities(self, particles):
@@ -264,8 +272,8 @@ class Galaxy:
         particles["Relative_Velocities"] = (
             particles["Velocities"] - self.gal_vel.T
         )
-        particles["Relative_Velocities_abs"] = np.linalg.norm(
-            particles["Relative_Velocities"], axis=1
+        particles["Relative_Velocities_abs"] = np.float32(
+            np.linalg.norm(particles["Relative_Velocities"], axis=1)
         )
         return
 
@@ -317,6 +325,10 @@ class Galaxy:
     def _select_galaxy_group(self, gas_groups):
         galaxy_group_num = select_galaxy_group(gas_groups)
         galaxy_group = gas_groups[galaxy_group_num]
+        slow_gas = (
+            np.array(galaxy_group["Flow_Velocities"]) < self.critical_velocity
+        )
+        galaxy_group = map_to_new_dict(galaxy_group, slow_gas)
         return galaxy_group_num, galaxy_group
 
     def _build_all_particles_dict(self, halo_particles):
@@ -461,6 +473,10 @@ class Galaxy:
                 weights = gas["Masses"]
             elif weighting == "Luminosity":
                 weights = gas["Density"] * gas["Masses"]
+            elif weighting == "Luminosity_O3":
+                weights = (
+                    gas["Density"] * gas["Masses"] * gas["GFM_Metallicity"]
+                )
             elif weighting is None:
                 weights = np.ones_like(gas["Flow_Velocities"])
             else:
@@ -475,5 +491,13 @@ class Galaxy:
             gas = self.cold_out_gas
         else:
             gas = self.out_gas
-        m_dot = np.sum(gas["Masses"] * gas["Flow_Velocities"])
+        m_dot = np.sum(gas["Masses"] * gas["Flow_Velocities"] / self.cut_r)
         return m_dot
+
+    def get_outflow_metallicity(self, cold_only=False):
+        if cold_only:
+            gas = self.cold_out_gas
+        else:
+            gas = self.out_gas
+        Z = np.average(gas["GFM_Metallicity"], weights=gas["Masses"])
+        return Z
