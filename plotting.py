@@ -13,6 +13,7 @@ from process_gas import Galaxy
 def prop_labels(prop):
     prop_labels = {
         "Flow_Velocities": r"$v_\mathrm{out}$",
+        "los_Velocities": r"$v_\mathrm{proj}$",
         "Masses": r"$\Sigma[\log(M_\odot)\mathrm{kpc}^{-2}]$",
         "StarFormationRate": r"$\Sigma_\mathrm{SFR}[\log(M_\odot)\mathrm{yr}^{-1}\mathrm{kpc}^{-2}]$",
         "Temperature": r"$T[\log(K)]$",
@@ -30,6 +31,31 @@ def prop_labels(prop):
         "M_out_cold": r"$M_\mathrm{out}[M_\odot]$",
         "M_dot": r"$\dot{M}_\mathrm{out}[M_\odot\mathrm{km}/\mathrm{s}]$",
         "M_dot_cold": r"$\dot{M}_\mathrm{out}[M_\odot\mathrm{km}/\mathrm{s}]$",
+        "cut_radius_abs": r"$r_\mathrm{cut}[\mathrm{kpc}]$",
+        "v_lum_50": r"$v_{\mathrm{out}, 50\mathrm{}}[\mathrm{km}/\mathrm{s}]$",
+        "v_lum_50_cold": r"$v_{\mathrm{out}, 50\mathrm{,cold}}[\mathrm{km}/\mathrm{s}]$",
+        "v_lum_75": r"$v_{\mathrm{out}, 75\mathrm{}}[\mathrm{km}/\mathrm{s}]$",
+        "v_lum_75_cold": r"$v_{\mathrm{out}, 75\mathrm{,cold}}[\mathrm{km}/\mathrm{s}]$",
+        "v_lum_90": r"$v_{\mathrm{out}, 90\mathrm{}}[\mathrm{km}/\mathrm{s}]$",
+        "v_lum_90_cold": r"$v_{\mathrm{out}, 90\mathrm{,cold}}[\mathrm{km}/\mathrm{s}]$",
+        "v_mass_50": r"$v_{\mathrm{out}, 50\mathrm{}}[\mathrm{km}/\mathrm{s}]$",
+        "v_mass_50_cold": r"$v_{\mathrm{out}, 50\mathrm{,cold}}[\mathrm{km}/\mathrm{s}]$",
+        "v_mass_75": r"$v_{\mathrm{out}, 75\mathrm{}}[\mathrm{km}/\mathrm{s}]$",
+        "v_mass_75_cold": r"$v_{\mathrm{out}, 75\mathrm{,cold}}[\mathrm{km}/\mathrm{s}]$",
+        "v_mass_90": r"$v_{\mathrm{out}, 90\mathrm{}}[\mathrm{km}/\mathrm{s}]$",
+        "v_mass_90_cold": r"$v_{\mathrm{out}, 90\mathrm{,cold}}[\mathrm{km}/\mathrm{s}]$",
+        "v_mdot_50": r"$v_{\mathrm{out}, 50\mathrm{}}[\mathrm{km}/\mathrm{s}]$",
+        "v_mdot_50_cold": r"$v_{\mathrm{out}, 50\mathrm{,cold}}[\mathrm{km}/\mathrm{s}]$",
+        "v_mdot_75": r"$v_{\mathrm{out}, 75\mathrm{}}[\mathrm{km}/\mathrm{s}]$",
+        "v_mdot_75_cold": r"$v_{\mathrm{out}, 75\mathrm{,cold}}[\mathrm{km}/\mathrm{s}]$",
+        "v_mdot_90": r"$v_{\mathrm{out}, 90\mathrm{}}[\mathrm{km}/\mathrm{s}]$",
+        "v_mdot_90_cold": r"$v_{\mathrm{out}, 90\mathrm{,cold}}[\mathrm{km}/\mathrm{s}]$",
+        "SFR_log": r"SFR$[\log(M_\odot/\mathrm{yr})]$",
+        "fraction_lum": r"$f(L)$",
+        "Relative_Velocities_abs": r"$|v|[\mathrm{km}/\mathrm{s}]$",
+        "Luminosity": r"$L_{H\alpha}$[a.u.]",
+        "Luminosity_light": r"$L_{H\alpha, \mathrm{dist}}$[a.u.]",
+        "Luminosity_O3": r"$L_{OIII}$[a.u.]",
     }
     return prop_labels[prop]
 
@@ -44,6 +70,11 @@ def get_ranges(prop, parameters):
         parameters["vcenter"] = 0
         parameters["vmax"] = 250
 
+    if prop == "los_Velocities":
+        parameters["vmin"] = -250
+        parameters["vcenter"] = 0
+        parameters["vmax"] = 250
+
     if prop == "Rot_Velocities":
         parameters["vmin"] = 0
         parameters["vcenter"] = 1500
@@ -54,15 +85,15 @@ def get_ranges(prop, parameters):
         parameters["vcenter"] = 300
         parameters["vmax"] = 600
 
-    elif prop == "Masses":
-        parameters["vmin"] = 7.0
-        parameters["vcenter"] = 8.5
-        parameters["vmax"] = 10
-
     # elif prop == "Masses":
-    #     parameters["vmin"] = 4.0
-    #     parameters["vcenter"] = 6.0
-    #     parameters["vmax"] = 8.0
+    #     parameters["vmin"] = 7.0
+    #     parameters["vcenter"] = 8.5
+    #     parameters["vmax"] = 10
+
+    elif prop == "Masses":
+        parameters["vmin"] = 6.0
+        parameters["vcenter"] = 7.5
+        parameters["vmax"] = 9
 
     elif prop == "GFM_Metallicity":
         parameters["vmin"] = -3.5
@@ -105,6 +136,7 @@ def get_cmap(prop):
         "Flow_Velocities",
         "Rot_Velocities",
         "Angular_Velocities",
+        "los_Velocities",
     }
     if prop in coolwarm_props:
         cmap = "coolwarm"
@@ -282,7 +314,40 @@ def get_data(df, prop_x, prop_y, bins, by_z=False):
     return x_centers, y_means_all, y_errors_all, labels
 
 
-def plot_prop_correlation(df, prop_x, prop_y, bins=20, by_z=False, stepsize=1):
+def label_colors(for_slides):
+    if for_slides:
+        params = {
+            "ytick.color": "w",
+            "xtick.color": "w",
+            "axes.labelcolor": "w",
+            "axes.edgecolor": "w",
+            "axes.facecolor": "black",
+            "legend.labelcolor": "w",
+            "axes.titlecolor": "w",
+        }
+        plt.rcParams.update(params)
+    else:
+        params = {
+            "ytick.color": "black",
+            "xtick.color": "black",
+            "axes.labelcolor": "black",
+            "axes.edgecolor": "black",
+            "axes.facecolor": "white",
+            "legend.labelcolor": "black",
+            "axes.titlecolor": "black",
+        }
+        plt.rcParams.update(params)
+    return
+
+
+def plot_prop_correlation(
+    df, prop_x, prop_y, bins=20, by_z=False, stepsize=1, for_slides=False
+):
+    label_colors(for_slides)
+    if prop_x == "SFR_log":
+        df = df[df.SFR_log > -5]
+    if prop_x == "M_star_log":
+        df = df[df.M_star_log > 7.5]
     x_centers, y_means_all, y_errors_all, labels = get_data(
         df=df, prop_x=prop_x, prop_y=prop_y, bins=bins, by_z=by_z
     )
@@ -290,15 +355,6 @@ def plot_prop_correlation(df, prop_x, prop_y, bins=20, by_z=False, stepsize=1):
     if not by_z:
         ax.scatter(df[prop_x], df[prop_y], s=1, alpha=0.3, color="red")
     for i in range(0, len(y_means_all), stepsize):
-        # ax.errorbar(
-        #     x_centers,
-        #     y_means_all[i],
-        #     yerr=y_errors_all[i],
-        #     fmt="o-",
-        #     capsize=5,
-        #     linewidth=3,
-        #     label=labels[i],
-        # )
         ax.plot(
             x_centers,
             y_means_all[i],
@@ -310,10 +366,89 @@ def plot_prop_correlation(df, prop_x, prop_y, bins=20, by_z=False, stepsize=1):
     ax.set_xlabel(prop_labels(prop_x), fontsize=parameters["label_fontsize"])
     ax.set_ylabel(prop_labels(prop_y), fontsize=parameters["label_fontsize"])
     ax.tick_params(labelsize=parameters["ticklabelsize"])
-    ax.set_ylim(0, 300)
-    ax.set_xlim(7.5, 11)
+    ax.set_ylim(0, 600)
     ax.legend(fontsize=15)
+    return
 
+
+def get_weights(gas, weighting):
+    if weighting == "Luminosity":
+        weights = gas["Density"] * gas["Masses"]
+    elif weighting == "Luminosity_light":
+        weights = gas["Density"] * gas["Masses"] / gas["SFR_dist"] ** 2
+    elif weighting == "Luminosity_O3":
+        weights = gas["Density"] * gas["Masses"] * gas["GFM_Metallicity"]
+    elif weighting is None:
+        weights = np.ones_like(gas["Flow_Velocities"])
+    else:
+        try:
+            weights = gas[weighting]
+        except KeyError:
+            raise KeyError(f"weighting {weighting} is not been implemented")
+    return weights
+
+
+def get_histogram(gas, velocity_type, bins, weights):
+    heights, _ = np.histogram(
+        gas[velocity_type],
+        bins=bins,
+        # density=True,
+        weights=weights,
+    )
+    return heights
+
+
+def plot_velocity_histogram(
+    gases,
+    velocity_types,
+    weighting="Luminosity",
+    bin_n=20,
+    range=None,
+    labels=None,
+    norms=None,
+    for_slides=False,
+    title=None,
+):
+    label_colors(for_slides)
+    if norms is None:
+        norms = np.ones(len(gases))
+    fig, ax = plt.subplots(figsize=(15, 10))
+    if range is None:
+        bins = np.linspace(
+            gases[0][velocity_types[0]].min(),
+            gases[0][velocity_types[0]].max(),
+            bin_n,
+        )
+    else:
+        bins = np.linspace(range[0], range[1], bin_n + 1)
+    centers = (bins[1:] + bins[:-1]) / 2
+    widths = bins[1:] - bins[:-1]
+    for i, gas in enumerate(gases):
+        weights = get_weights(gas, weighting)
+        heights = get_histogram(gas, velocity_types[i], bins, weights)
+
+        ax.bar(
+            centers,
+            heights,
+            width=widths,
+            label=labels[i],
+            alpha=0.3,
+        )
+
+    parameters = plot_parameters_comp()
+    ax.set_xlabel(
+        prop_labels(velocity_types[-1]), fontsize=parameters["label_fontsize"]
+    )
+    ax.set_ylabel(
+        prop_labels(weighting), fontsize=parameters["label_fontsize"]
+    )
+    ax.tick_params(labelsize=parameters["ticklabelsize"])
+    ax.legend(fontsize=15)
+    if title is not None:
+        ax.set_title(title, fontsize=25)
+    # ax.set_xlim(-120, 120)
+    # ax.set_ylim(0.001, 0.1)
+    # ax.set_yscale("log")
     return
 
 
@@ -325,21 +460,25 @@ def plot_prop_maps_grouped(
     grid_size=100,
     method="GMM",
     group_props=None,
-    n_peak=3,
     dirs=[1, 2],
     sizebar_length=1,
+    projection_angle_theta=None,
+    projection_angle_phi=0,
+    for_slides=False,
 ):
+    label_colors(for_slides)
 
-    gal = Galaxy(
+    gridder = GasGridder(
         df=df,
         halo_id=halo_id,
         snap=snap,
         group_props=group_props,
-        n_peak=n_peak,
         out_gas_sel=method,
-        with_rotation=True,
+        grid_size=grid_size,
+        quants=props,
+        projection_angle_theta=projection_angle_theta,
+        projection_angle_phi=projection_angle_phi,
     )
-    gridder = GasGridder(gal=gal, grid_size=grid_size, quants=props)
     for prop in props:
         plot_prop_maps(gridder, prop, dirs, sizebar_length)
     return
