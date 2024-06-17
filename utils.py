@@ -5,20 +5,49 @@ from pyTNG import data_interface as _data_interface
 from pyTNG.cosmology import TNGcosmo
 from astropy import units as u
 from astropy.constants import G
+from config import config
 
 
 def get_sim():
-    basepath = "/virgotng/universe/IllustrisTNG/"
-    sim_name = "L35n2160TNG"
+    basepath = config["tng_datapath"]  # "/virgotng/universe/IllustrisTNG/"
+    sim_name = config["sim_name"]
     sim = _data_interface.TNG50Simulation(os.path.join(basepath, sim_name))
     sim_path = os.path.join(basepath, sim_name, "output")
     return sim, sim_path
 
 
 def get_redshift(snap_num):
-    sim, _ = get_sim()
-    z = sim.snap_cat[snap_num].header["Redshift"]
-    return z
+    redshifts = {
+        0: 20.046490988807516,
+        1: 14.989173240042412,
+        2: 11.980213315300293,
+        3: 10.975643294137885,
+        4: 9.996590466186333,
+        5: 9.388771271940549,
+        6: 9.00233985416247,
+        7: 8.449476294368743,
+        8: 8.012172948865935,
+        9: 7.5951071498715965,
+        10: 7.23627606616736,
+        11: 7.005417045544533,
+        12: 6.491597745667503,
+        13: 6.0107573988449,
+        14: 5.846613747881867,
+        15: 5.5297658079491026,
+        16: 5.227580973127337,
+        17: 4.995933468164624,
+        18: 4.664517702470927,
+        19: 4.428033736605549,
+        20: 4.176834914726472,
+        21: 4.0079451114652676,
+        22: 3.7087742646422353,
+        23: 3.4908613692606485,
+        24: 3.2830330579565246,
+        25: 3.008131071630377,
+    }
+    # sim, _ = get_sim()
+    # z = sim.snap_cat[snap_num].header["Redshift"]
+    return redshifts[snap_num]
 
 
 def scale_factor(z):
