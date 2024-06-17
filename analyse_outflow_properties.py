@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 from config import config
 from process_gas import Galaxy
+from galaxy_shell_outflows import GalaxyShells
 
 
 class OutflowPropUpdater:
@@ -10,16 +11,16 @@ class OutflowPropUpdater:
         self,
         df_name,
         save_name=None,
-        n_peak=3,
         group_props=None,
         snap_range=None,
         with_quantile=False,
+        only_shell=False,
     ):
         self.df_name = df_name + config["hdf_ending"]
         self.snap_range = snap_range
         self.save_name = save_name
+        self.shell = only_shell
 
-        self.n_peak = n_peak
         self.group_props = group_props
         self.with_quantile = with_quantile
 
@@ -57,7 +58,6 @@ class OutflowPropUpdater:
             df=self.df,
             halo_id=halo_id,
             snap=snap,
-            n_peak=self.n_peak,
             group_props=self.group_props,
         )
         keys = [
@@ -94,13 +94,22 @@ class OutflowPropUpdater:
         return out_props
 
     def quantile_outflow_props(self, halo_id, snap):
-        gal = Galaxy(
-            df=self.df,
-            halo_id=halo_id,
-            snap=snap,
-            n_peak=self.n_peak,
-            group_props=self.group_props,
-        )
+        if self.shell:
+            # This is mostly to compare with Nelson et al. 2019,
+            # hence the hardcoded 10kpc radius
+            gal = GalaxyShells(
+                df=self.df,
+                halo_id=halo_id,
+                snap=snap,
+                radius=10,
+            )
+        else:
+            gal = Galaxy(
+                df=self.df,
+                halo_id=halo_id,
+                snap=snap,
+                group_props=self.group_props,
+            )
         keys = []
         out_vels = {}
         quantiles = [0.5, 0.75, 0.9]
@@ -123,6 +132,7 @@ class OutflowPropUpdater:
         except:
             for key in keys:
                 out_vels[key] = None
+
         return out_vels
 
     def _create_key_column(self, key):
@@ -160,8 +170,8 @@ class OutflowPropUpdater:
             counter += 1
             halo_id = int(element.Halo_id)
             snap = int(element.snap)
-            if self._has_value(halo_id=halo_id, snap=snap):
-                continue
+            # if self._has_value(halo_id=halo_id, snap=snap):
+            #     continue
             if self.with_quantile:
                 out_props = self.quantile_outflow_props(halo_id, snap)
             else:
@@ -171,6 +181,48 @@ class OutflowPropUpdater:
                 self.df.loc[
                     (self.df.snap == snap) & (self.df.Halo_id == halo_id), key
                 ] = out_props[key]
+
+            if counter % 100 == 0:
+                print(
+                    f"Processed {counter/len(iteration_df)*100:.2f}% of galaxies"
+                )
+                self.save_df()
+        return
+
+    def add_outflow_metallicity(self):
+        if self.snap_range is not None:
+            iteration_df = self.df[
+                (self.df.snap >= self.snap_range[0])
+                & (self.df.snap <= self.snap_range[1])
+                & (self.df.M_star_log > 7.5)
+            ]
+        else:
+            iteration_df = self.df
+        counter = 0
+        if "outflow_Z" not in self.df.keys():
+            self.df["outflow_Z"] = np.nan * np.ones(len(self.df))
+            self.df["outflow_Z_warm"] = np.nan * np.ones(len(self.df))
+
+        for _, element in iteration_df.iterrows():
+            counter += 1
+            halo_id = int(element.Halo_id)
+            snap = int(element.snap)
+            gal = Galaxy(
+                df=self.df,
+                halo_id=halo_id,
+                snap=snap,
+                group_props=self.group_props,
+            )
+            self.df.loc[
+                (self.df.snap == snap) & (self.df.Halo_id == halo_id),
+                "outflow_Z",
+            ] = gal.get_outflow_metallicity(cold_only=False)
+
+            self.df.loc[
+                (self.df.snap == snap) & (self.df.Halo_id == halo_id),
+                "outflow_Z_warm",
+            ] = gal.get_outflow_metallicity(cold_only=True)
+
             if counter % 100 == 0:
                 print(
                     f"Processed {counter/len(iteration_df)*100:.2f}% of galaxies"
@@ -184,10 +236,13 @@ class OutflowPropUpdater:
 
 if __name__ == "__main__":
     updater = OutflowPropUpdater(
-        "all_galaxies_new",
+        "all_galaxies_extended",
         save_name="all_galaxies_extended",
         snap_range=[17, 25],
-        with_quantile=True,
+        with_quantile=False,
+        only_shell=False,
     )
-    updater.add_outflow_parameters()
+    updater.add_outflow_metallicity()
+
+    # updater.add_outflow_parameters()
     updater.save_df()
