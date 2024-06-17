@@ -96,8 +96,8 @@ def associate_gas_to_peaks(gas, n_peaks, props):
     if props is None:
         props = [
             "Flow_Velocities",
-            "Rot_Velocities",
-            "Temperature",
+            # "Rot_Velocities",
+            "StarFormationRate",
             "Coordinates",
         ]
     gmm = GMM(
@@ -142,7 +142,9 @@ def select_galaxy_group(group_array):
     return galaxy_group
 
 
-def get_only_outflowing_gas(out_gas, galaxy_group):
-    idces_rel_gas = out_gas["group"] != galaxy_group
+def get_only_outflowing_gas(out_gas, galaxy_group, crit_vout):
+    idces_rel_gas = (out_gas["group"] != galaxy_group) | (
+        (out_gas["Flow_Velocities"] > crit_vout)
+    )
     rel_gas = map_to_new_dict(out_gas, idces_rel_gas)
     return rel_gas

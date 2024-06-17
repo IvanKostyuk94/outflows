@@ -1,31 +1,48 @@
 import numpy as np
 from pyTNG import gridding
 
-from utils import get_redshift, scale_factor
+from utils import scale_factor
 from pyTNG.cosmology import TNGcosmo
+from los_projection import GalaxyProjections
 
 
-class GasGridder:
+class GasGridder(GalaxyProjections):
     def __init__(
         self,
-        gal,
+        df,
+        halo_id,
+        snap,
+        group_props=None,
+        out_gas_sel="GMM",
         quants=None,
         grid_size=100,
         n_threads=8,
-        projection_angle=None,
+        projection_angle_theta=None,
+        projection_angle_phi=0,
     ):
+        super().__init__(
+            df,
+            halo_id,
+            snap,
+            group_props=group_props,
+            out_gas_sel=out_gas_sel,
+            projection_angle_theta=projection_angle_theta,
+            projection_angle_phi=projection_angle_phi,
+        )
         self._quants = quants
         self._grids = None
-
-        self.gal = gal
 
         self.n_threads = n_threads
 
         self.box_size = (
-            0.7 * self.gal.cut_factor * self.gal.scale_radius * 2 * np.ones(3)
+            0.7 * self.cut_factor * self.scale_radius * 2 * np.ones(3)
         )
         self.shape = (grid_size * np.ones(3)).astype(np.int64)
         self.grid_cen = np.array([0, 0, 0])
+
+        if projection_angle_theta is not None:
+            # self.line_of_sight_projection()
+            self.project_outflows()
 
     @property
     def quants(self):
@@ -36,38 +53,38 @@ class GasGridder:
                 "Flow_Velocities",
                 "Rot_Velocities",
                 "Angular_Velocities",
+                "Relative_Velocities_abs",
             ]
         return self._quants
 
     @property
     def grids(self):
         if self._grids is None:
-            grid = self._get_gridded(gas=self.gal.gas)
+            grid = self._get_gridded(gas=self.gas)
             self._normalize(grid)
             self._grids = [grid]
 
-            if self.gal.out_gas_sel == "GMM":
-                galaxy_gridded = self._get_gridded(gas=self.gal.out_galaxy)
+            if self.out_gas_sel == "GMM":
+                galaxy_gridded = self._get_gridded(gas=self.out_galaxy)
                 self._normalize(galaxy_gridded)
                 self._grids.append(galaxy_gridded)
 
-                outflow_gridded = self._get_gridded(gas=self.gal.out_gas)
+                outflow_gridded = self._get_gridded(gas=self.out_gas)
                 self._normalize(outflow_gridded)
                 self._grids.append(outflow_gridded)
 
-                remain_gridded = self._get_gridded(gas=self.gal.remain_gas)
-                print(self.gal.remain_gas["count"])
-                self._normalize(remain_gridded)
-                self._grids.append(remain_gridded)
+                # remain_gridded = self._get_gridded(gas=self.remain_gas)
+                # self._normalize(remain_gridded)
+                # self._grids.append(remain_gridded)
 
-            elif (self.gal.out_gas_sel == "v_esc_ratio") or (
-                self.gal.out_gas_sel == "v_crit"
+            elif (self.out_gas_sel == "v_esc_ratio") or (
+                self.out_gas_sel == "v_crit"
             ):
-                outflow_gridded = self._get_gridded(gas=self.gal.out_gas)
+                outflow_gridded = self._get_gridded(gas=self.out_gas)
                 self._normalize(outflow_gridded)
                 self._grids.append(outflow_gridded)
 
-                remain_gridded = self._get_gridded(gas=self.gal.remain_gas)
+                remain_gridded = self._get_gridded(gas=self.remain_gas)
                 self._normalize(remain_gridded)
                 self._grids.append(remain_gridded)
 
@@ -116,7 +133,7 @@ class GasGridder:
         return
 
     def get_pixel_length_abs(self):
-        a = scale_factor(self.gal.z)
+        a = scale_factor(self.z)
         pixel_length_com = self.box_size[0] / self.shape[0]
         pixel_length_abs = pixel_length_com / TNGcosmo.h * a
         return pixel_length_abs
@@ -143,6 +160,10 @@ class GasGridder:
             np.true_divide(data.sum(dir), masses.sum(dir)),
             0,
         )
+        cell_size = self.get_pixel_length_abs()
+        tot_mass_ax = masses.sum(axis=dir) * 1e10 / TNGcosmo.h
+        surface_dens = np.log10(tot_mass_ax / cell_size**2 + 1e-9)
+        image[surface_dens < 6.5] = 0
         log_props = {"GFM_Metallicity", "Temperature"}
         if prop in log_props:
             image = np.log10(image + 1e-20)
@@ -160,6 +181,7 @@ class GasGridder:
             "Angular_Velocities",
             "GFM_Metallicity",
             "Temperature",
+            "los_Velocities",
         }
         if prop in mass_weighted_props:
             image = self._get_mass_weighted_image(number, dir, prop)
@@ -172,21 +194,3 @@ class GasGridder:
                 f"The property {prop} is not implemented yet"
             )
         return image
-
-
-# Ignore for now to be moved to to new class when developing projection
-def line_of_sight_projection(gas, angle, center):
-    los_dir = np.array([np.cos(angle), 0, np.sin(angle)])
-    los_rot_matrix = [
-        [np.cos(angle), 0, np.sin(angle)],
-        [0, 1, 0],
-        [-np.sin(angle), 0, np.cos(angle)],
-    ]
-    proj_velocities = np.float32(
-        np.multiply(gas["Velocities"], los_dir).sum(axis=1)
-    )
-    gas["Projected_Velocities"] = proj_velocities
-    rot_transformer = R.from_matrix(los_rot_matrix)
-    gas["Coordinates"] = rot_transformer.apply(gas["Coordinates"])
-    center = rot_transformer.apply(center)
-    return center
