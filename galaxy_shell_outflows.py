@@ -5,7 +5,7 @@ import numpy as np
 
 
 class GalaxyShells(Galaxy):
-    def __init__(self, df, halo_id, snap, radius, thickness=5):
+    def __init__(self, df, halo_id, snap, radius, thickness=5.0):
         super().__init__(df, halo_id, snap)
         self.radius = radius
         self.thickness = thickness
@@ -60,9 +60,50 @@ class GalaxyShells(Galaxy):
         else:
             weights = gas[weighting]
         try:
-            print(gas["count"])
             v_mean = np.quantile(gas["Flow_Velocities"], q=0.9)
             # v_mean = np.average(gas["Flow_Velocities"], weights=weights)
         except ZeroDivisionError:
             v_mean = None
         return v_mean
+
+    def _get_quantile_vout(self, gas, weights, quantile):
+        sorted_indices = np.argsort(gas["Flow_Velocities"])
+        sorted_velocities = gas["Flow_Velocities"][sorted_indices]
+        sorted_weights = weights[sorted_indices]
+        weights_summed = np.cumsum(sorted_weights)
+        total_weight = weights_summed[-1]
+        threshold_weight = total_weight * quantile
+        velocity_threshold_index = np.searchsorted(
+            weights_summed, threshold_weight, side="right"
+        )
+        v_out = sorted_velocities[velocity_threshold_index]
+        return v_out
+
+    def get_quantile_velocity(self, quantile, weighting=None, cold_only=False):
+        if cold_only:
+            gas = self.cold_shell_out_gas
+        else:
+            gas = self.shell_gas
+        try:
+            if weighting == "Flux":
+                weights = gas["Masses"] * gas["Flow_Velocities"]
+            elif weighting == "Masses":
+                weights = gas["Masses"]
+            elif weighting == "Luminosity":
+                weights = gas["Density"] * gas["Masses"]
+            elif weighting is None:
+                weights = np.ones_like(gas["Flow_Velocities"])
+            else:
+                raise NotImplementedError
+            v_out = self._get_quantile_vout(gas, weights, quantile)
+        except ZeroDivisionError:
+            v_out = None
+        return v_out
+
+    def get_flow_rate(self, cold_only=False):
+        if cold_only:
+            gas = self.cold_out_gas
+        else:
+            gas = self.out_gas
+        m_dot = np.sum(gas["Masses"] * gas["Flow_Velocities"])
+        return m_dot
