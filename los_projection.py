@@ -1,6 +1,7 @@
 import numpy as np
 from process_gas import Galaxy
 from scipy.spatial.transform import Rotation as R
+from utils import map_to_new_dict
 
 """Project the galactic gas as well as the outflow gas along the
 line of sight of the observer. After the initial rotation during the 
@@ -17,9 +18,9 @@ class GalaxyProjections(Galaxy):
         df,
         halo_id,
         snap,
-        projection_angle,
+        projection_angle_theta,
+        projection_angle_phi=0,
         group_props=None,
-        n_peak=3,
         out_gas_sel="GMM",
     ):
         super().__init__(
@@ -28,10 +29,10 @@ class GalaxyProjections(Galaxy):
             snap,
             with_rotation=True,
             group_props=group_props,
-            n_peak=n_peak,
             out_gas_sel=out_gas_sel,
         )
-        self.angle = projection_angle
+        self.angle_phi = projection_angle_phi
+        self.angle_theta = projection_angle_theta
 
         self._projected_outflows = None
         self._view_dir = None
@@ -39,9 +40,15 @@ class GalaxyProjections(Galaxy):
     @property
     def view_dir(self):
         if self._view_dir is None:
-            rad_angle = self.angle * np.pi / 180
+            rad_angle_theta = self.angle_theta * np.pi / 180
+            rad_angle_phi = self.angle_phi * np.pi / 180
+
             self._view_dir = np.array(
-                [np.sin(rad_angle), 0, np.cos(rad_angle)]
+                [
+                    np.cos(rad_angle_phi) * np.sin(rad_angle_theta),
+                    np.sin(rad_angle_phi) * np.sin(rad_angle_theta),
+                    np.cos(rad_angle_theta),
+                ]
             )
         return self._view_dir
 
@@ -71,4 +78,18 @@ class GalaxyProjections(Galaxy):
         self.remain_gas["los_Velocities"] = np.float32(
             np.dot(self.remain_gas["Relative_Velocities"], self.view_dir)
         )
+        self.out_galaxy["los_Velocities"] = np.float32(
+            np.dot(self.out_galaxy["Relative_Velocities"], self.view_dir)
+        )
+        return
+
+    def select_warm_gas(self, gas):
+        idces = (gas["Temperature"] > 1e4) & (gas["Temperature"] < 1e5)
+        relevant_gas = map_to_new_dict(gas, idces)
+        return relevant_gas
+
+    def use_only_warm(self):
+        self.out_gas_warm = self.select_warm_gas(self.out_gas)
+        self.gas_warm = self.select_warm_gas(self.gas)
+        self.remain_gas_warm = self.select_warm_gas(self.remain_gas)
         return
