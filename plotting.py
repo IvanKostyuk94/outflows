@@ -8,13 +8,16 @@ from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
 from utils import get_redshift
 from Grid_halo import GasGridder
 from process_gas import Galaxy
+from los_projection import GalaxyProjections
+from utils import get_halo, get_redshift
 
 
 def prop_labels(prop):
     prop_labels = {
         "Flow_Velocities": r"$v_\mathrm{out}$",
         "los_Velocities": r"$v_\mathrm{proj}$",
-        "Masses": r"$\Sigma[\log(M_\odot)\mathrm{kpc}^{-2}]$",
+        # "Masses": r"$\Sigma[\log(M_\odot)\mathrm{kpc}^{-2}]$",
+        "Masses": r"$M[\mathrm{a.u.}]$",
         "StarFormationRate": r"$\Sigma_\mathrm{SFR}[\log(M_\odot)\mathrm{yr}^{-1}\mathrm{kpc}^{-2}]$",
         "Temperature": r"$T[\log(K)]$",
         "GFM_Metallicity": r"$\log(Z)$",
@@ -56,6 +59,7 @@ def prop_labels(prop):
         "Luminosity": r"$L_{H\alpha}$[a.u.]",
         "Luminosity_light": r"$L_{H\alpha, \mathrm{dist}}$[a.u.]",
         "Luminosity_O3": r"$L_{OIII}$[a.u.]",
+        "v_z": r"$v_z[\mathrm{km}/\mathrm{s}]$",
     }
     return prop_labels[prop]
 
@@ -70,30 +74,40 @@ def get_ranges(prop, parameters):
         parameters["vcenter"] = 0
         parameters["vmax"] = 250
 
-    if prop == "los_Velocities":
+    elif prop == "los_Velocities":
         parameters["vmin"] = -250
         parameters["vcenter"] = 0
         parameters["vmax"] = 250
 
-    if prop == "Rot_Velocities":
+    elif prop == "Relative_Velocities_abs":
+        parameters["vmin"] = -250
+        parameters["vcenter"] = 0
+        parameters["vmax"] = 250
+
+    elif prop == "v_z":
+        parameters["vmin"] = -250
+        parameters["vcenter"] = 0
+        parameters["vmax"] = 250
+
+    elif prop == "Rot_Velocities":
         parameters["vmin"] = 0
         parameters["vcenter"] = 1500
         parameters["vmax"] = 3000
 
-    if prop == "Angular_Velocities":
+    elif prop == "Angular_Velocities":
         parameters["vmin"] = 0
         parameters["vcenter"] = 300
         parameters["vmax"] = 600
 
-    # elif prop == "Masses":
-    #     parameters["vmin"] = 7.0
-    #     parameters["vcenter"] = 8.5
-    #     parameters["vmax"] = 10
-
     elif prop == "Masses":
-        parameters["vmin"] = 6.0
-        parameters["vcenter"] = 7.5
-        parameters["vmax"] = 9
+        parameters["vmin"] = 7.0
+        parameters["vcenter"] = 8.0
+        parameters["vmax"] = 9.0
+
+    # elif prop == "Masses":
+    #     parameters["vmin"] = 6.0
+    #     parameters["vcenter"] = 7.5
+    #     parameters["vmax"] = 9
 
     elif prop == "GFM_Metallicity":
         parameters["vmin"] = -3.5
@@ -137,6 +151,7 @@ def get_cmap(prop):
         "Rot_Velocities",
         "Angular_Velocities",
         "los_Velocities",
+        "v_z",
     }
     if prop in coolwarm_props:
         cmap = "coolwarm"
@@ -444,12 +459,111 @@ def plot_velocity_histogram(
     )
     ax.tick_params(labelsize=parameters["ticklabelsize"])
     ax.legend(fontsize=15)
+    # ax.set_yscale("log")
     if title is not None:
         ax.set_title(title, fontsize=25)
-    # ax.set_xlim(-120, 120)
-    # ax.set_ylim(0.001, 0.1)
-    # ax.set_yscale("log")
     return
+
+
+def plot_density_histogram(
+    gas,
+    bin_n=20,
+    for_slides=False,
+    title=None,
+):
+    label_colors(for_slides)
+    fig, ax = plt.subplots(figsize=(15, 10))
+    quantity = np.log10(gas["Density_e"])
+    bins = np.linspace(
+        quantity.min(),
+        quantity.max(),
+        bin_n,
+    )
+    centers = (bins[1:] + bins[:-1]) / 2
+    heights, _ = np.histogram(
+        quantity,
+        bins=bins,
+    )
+
+    ax.bar(
+        centers,
+        heights,
+    )
+
+    parameters = plot_parameters_comp()
+    ax.set_xlabel(
+        r"$n_e[\mathrm{cm}^{-3}]$", fontsize=parameters["label_fontsize"]
+    )
+    ax.set_ylabel(
+        "counts",
+        fontsize=parameters["label_fontsize"],
+    )
+    ax.tick_params(labelsize=parameters["ticklabelsize"])
+    ax.legend(fontsize=15)
+    # ax.set_yscale("log")
+    if title is not None:
+        ax.set_title(title, fontsize=25)
+    return
+
+
+def plot_los_histograms(
+    halo_id, snap, df, angles_theta, angles_phi, bin_n=100
+):
+    columns = len(angles_theta)
+    rows = len(angles_phi)
+    figsize = (5 * columns, 5 * rows)
+    sample = get_halo(df, snap, halo_id)
+    title = rf"$M_\star = 10^{{{sample.M_star_log:.1f}}}M_\odot, z={get_redshift(snap):.1f}$"
+    fig, axs = plt.subplots(
+        ncols=columns,
+        nrows=rows,
+        gridspec_kw={
+            "wspace": 0.05,
+            "hspace": 0.07,
+        },
+        figsize=figsize,
+    )
+    for i, theta in enumerate(angles_theta):
+        for j, phi in enumerate(angles_phi):
+            gal = GalaxyProjections(
+                df=df,
+                halo_id=int(halo_id),
+                snap=int(snap),
+                projection_angle_theta=theta,
+                projection_angle_phi=phi,
+            )
+
+            gal.project_outflows()
+            gal.use_only_warm()
+
+            gases = []
+            labels = []
+            velocity_types = []
+            norms = []
+            gases.append(gal.gas)
+            gases.append(gal.out_gas)
+            gases.append(gal.remain_gas)
+
+            velocity_types.append("los_Velocities")
+            velocity_types.append("los_Velocities")
+            velocity_types.append("los_Velocities")
+            bins = np.linspace(
+                gases[0][velocity_types[0]].min(),
+                gases[0][velocity_types[0]].max(),
+                bin_n,
+            )
+            centers = (bins[1:] + bins[:-1]) / 2
+            widths = bins[1:] - bins[:-1]
+            weights = get_weights(gas, weighting)
+            heights = get_histogram(gas, velocity_types[i], bins, weights)
+
+            axs[i, j].bar(
+                centers,
+                heights,
+                width=widths,
+                label=labels[i],
+                alpha=0.3,
+            )
 
 
 def plot_prop_maps_grouped(
