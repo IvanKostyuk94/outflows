@@ -146,5 +146,16 @@ def get_only_outflowing_gas(out_gas, galaxy_group, crit_vout):
     idces_rel_gas = (out_gas["group"] != galaxy_group) | (
         (out_gas["Flow_Velocities"] > crit_vout)
     )
+    # idces_rel_gas = (
+    #     (out_gas["group"] != galaxy_group)
+    #     | (
+    #         ((np.abs(out_gas["Relative_Velocities"][:, 2]) > crit_vout))
+    #         & (out_gas["Coordinates"][:, 2] > 0)
+    #     )
+    #     | (
+    #         ((out_gas["Relative_Velocities"][:, 2] < -crit_vout))
+    #         & (out_gas["Coordinates"][:, 2] < 0)
+    #     )
+    # )
     rel_gas = map_to_new_dict(out_gas, idces_rel_gas)
     return rel_gas
