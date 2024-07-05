@@ -4,7 +4,7 @@ import pandas as pd
 import pyTNG.utils as utils
 from pyTNG.cosmology import TNGcosmo
 from config import config
-from utils import get_sim, get_snap_name
+from utils import get_sim
 
 h = TNGcosmo.h
 
