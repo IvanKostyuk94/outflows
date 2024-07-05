@@ -18,22 +18,42 @@ def get_metalliciy_df(sim, snap_num):
     return dataset_df
 
 
-def add_metallicities(df_name):
+def get_v_df(sim, snap_num):
+    dataset = next(sim.group_cat[snap_num].chunk_generator("subhalo"))
+    keys_needed = [
+        "SubhaloVelDisp",
+        "SubhaloVmax",
+    ]
+    sub_dict = {key: dataset[key] for key in keys_needed}
+    dataset_df = dfFromArrDict(sub_dict)
+    return dataset_df
+
+
+def add_quantities(df_name, type="Metallicity"):
     sim, _ = get_sim()
     df_path = os.path.join(config["base_path"], df_name)
     df = pd.read_hdf(df_path)
     for snap in df.snap.unique():
         print(f"Working on snap {snap}")
         sub_df = df[df["snap"] == snap]
-        metal_df = get_metalliciy_df(sim, snap_num=snap)
-        print("Finished creating metal df")
+        if type == "Metallicity":
+            data_df = get_metalliciy_df(sim, snap_num=snap)
+        elif type == "Velocities":
+            data_df = get_v_df(sim, snap_num=snap)
+        else:
+            raise NotImplementedError(f"{type} is not implemented yet")
+        print("Finished creating df")
         if snap == 2:
-            for key in metal_df:
+            for key in data_df:
                 if key not in df.keys():
                     df[key[0]] = np.nan * np.ones(len(df))
         for _, gal in sub_df.iterrows():
-            for key in metal_df.keys():
+            for key in data_df.keys():
                 df.loc[(df.idx == gal.idx) & (df["snap"] == snap), key[0]] = (
-                    metal_df.loc[gal.idx][key]
+                    data_df.loc[gal.idx][key]
                 )
         df.to_hdf(df_path, config["hdf_key"])
+
+
+if __name__ == "__main__":
+    add_quantities("all_galaxies_extended.hdf5", type="Velocities")
