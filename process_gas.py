@@ -1,6 +1,8 @@
 import warnings
 import numpy as np
 import illustris_python as il
+import astropy.units as u
+import astropy.constants as c
 from pyTNG import gas_temperature
 from pyTNG.cosmology import TNGcosmo
 from scipy.spatial.transform import Rotation as R
@@ -61,7 +63,9 @@ class Galaxy:
         self.v_esc_ratio = v_esc_ratio
         self.z = get_redshift(self.snap)
         self.with_rotation = with_rotation
-        self.critical_velocity = 50
+        self.critical_velocity = 2 * self.halo.SubhaloVelDisp.values[0]
+        self.critical_out_velocity = 2 * self.halo.SubhaloVelDisp.values[0]
+        # self.critical_velocity = 50
 
         if self.halo.M_star_log.values[0] < 9:
             self.scale_radius = float(self.halo.r_SFR)
@@ -128,9 +132,13 @@ class Galaxy:
             self._gas = il.snapshot.loadHalo(
                 self.sim_path, self.snap, self.halo_id, "gas"
             )
+            # self._gas = il.snapshot.loadSubhalo(
+            #     self.sim_path, self.snap, self.galaxy_id, "gas"
+            # )
             if self.out_gas_sel == "v_esc_ratio":
                 self._get_gas_v_esc(self._gas)
 
+            self._convert_density(self._gas)
             self._get_relative_coordinates(self._gas)
             self._get_relative_distances(self._gas)
             self._gas = self._cut_gal_scale(self._gas)
@@ -141,8 +149,8 @@ class Galaxy:
             self._get_rot_vel(self._gas)
             gas_temperature.gasTemp(self._gas)
             self._get_hsml()
-            if self.with_rotation:
-                self._gas = self.rotate_into_galactic_plane(self._gas)
+            # if self.with_rotation:
+            self._gas = self.rotate_into_galactic_plane(self._gas)
         return self._gas
 
     # Selects all gas that is moving out: v_out>0
@@ -156,11 +164,24 @@ class Galaxy:
                 galaxy_group_num, self._out_galaxy = self._select_galaxy_group(
                     galaxy_groups
                 )
-                self._out_gas = get_only_outflowing_gas(
+
+                outflowing_gas = get_only_outflowing_gas(
                     all_out_gas,
                     galaxy_group=galaxy_group_num,
-                    crit_vout=self.critical_velocity,
+                    crit_vout=self.critical_out_velocity,
                 )
+                out_gas_z = self.get_out_gas_z()
+
+                overlap_indices = np.union1d(
+                    outflowing_gas["idces"], out_gas_z["idces"]
+                )
+                result_array = np.full_like(
+                    self.gas["idces"], False, dtype=bool
+                )
+                outflow_idces = np.isin(self.gas["idces"], overlap_indices)
+                result_array[outflow_idces] = True
+                self._out_gas = map_to_new_dict(self.gas, result_array)
+
             elif self.out_gas_sel == "v_esc_ratio":
                 self._out_gas = self._select_moving_gas(
                     v_esc_ratio=self.v_esc_ratio
@@ -220,6 +241,25 @@ class Galaxy:
             self._ang_mom_dir = tot_ang_mom / np.linalg.norm(tot_ang_mom)
         return self._ang_mom_dir
 
+    def _convert_density(self, gas):
+        to_msun_ckpc = (1e10 / 0.6774) / (
+            1 / 0.6774 / (float(self.halo.z) + 1)
+        ) ** 3
+        to_cm_3 = to_msun_ckpc * c.M_sun / c.m_p * 0.76 / (u.kpc.to(u.cm)) ** 3
+        gas["Density_e"] = gas["Density"] * to_cm_3 * gas["ElectronAbundance"]
+        return
+
+    def get_out_gas_z(self):
+        idces_z_gas = (
+            ((self.gas["Relative_Velocities"][:, 2] > self.critical_velocity))
+            & (self.gas["Coordinates"][:, 2] > 0)
+        ) | (
+            ((self.gas["Relative_Velocities"][:, 2] < -self.critical_velocity))
+            & (self.gas["Coordinates"][:, 2] < 0)
+        )
+        out_gas_z = map_to_new_dict(self.gas, idces_z_gas)
+        return out_gas_z
+
     def _set_idces(self, gas):
         gas["idces"] = np.arange(gas["count"])
         return
@@ -269,9 +309,15 @@ class Galaxy:
         particles["Velocities"] = particles["Velocities"] * np.sqrt(
             scale_factor(self.z)
         )
-        particles["Relative_Velocities"] = (
-            particles["Velocities"] - self.gal_vel.T
-        )
+        # self._stars = il.snapshot.loadSubhalo(
+        #     self.sim_path, self.snap, self.galaxy_id, "gas"
+        # )
+        # particles["Relative_Velocities"] = (
+        #     particles["Velocities"] - self.gal_vel.T
+        # )
+        particles["Relative_Velocities"] = particles["Velocities"] - particles[
+            "Velocities"
+        ].mean(axis=0)
         particles["Relative_Velocities_abs"] = np.float32(
             np.linalg.norm(particles["Relative_Velocities"], axis=1)
         )
