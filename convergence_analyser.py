@@ -58,7 +58,7 @@ class ConvergenceAnalyser:
         return outflow_dict
 
     def _n_peak_convergence(self):
-        peaks = np.arange(2, 15)
+        peaks = np.arange(2, 10)
         out_mass = {}
         out_vel_lum = {}
         out_vel_mass = {}
