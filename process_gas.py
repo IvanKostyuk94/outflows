@@ -33,7 +33,7 @@ class Galaxy:
         df,
         halo_id,
         snap,
-        cut_factor=10,
+        cut_factor=5,
         group_props=None,
         out_gas_sel="GMM",
         v_esc_ratio=0.3,
@@ -94,7 +94,18 @@ class Galaxy:
     @property
     def gal_pos(self):
         if self._gal_pos is None:
+            gas = il.snapshot.loadSubhalo(
+                self.sim_path, self.snap, self.galaxy_id, "gas"
+            )
+            # self._gal_pos = np.average(gas['Coordinates'], weights=gas['Density'], axis=0) 
             self._gal_pos = np.array(
+                [
+                    float(self.halo.Galaxy_pos_x),
+                    float(self.halo.Galaxy_pos_y),
+                    float(self.halo.Galaxy_pos_z),
+                ]
+            )
+            test = np.array(
                 [
                     float(self.halo.Galaxy_pos_x),
                     float(self.halo.Galaxy_pos_y),
@@ -132,9 +143,6 @@ class Galaxy:
             self._gas = il.snapshot.loadHalo(
                 self.sim_path, self.snap, self.halo_id, "gas"
             )
-            # self._gas = il.snapshot.loadSubhalo(
-            #     self.sim_path, self.snap, self.galaxy_id, "gas"
-            # )
             if self.out_gas_sel == "v_esc_ratio":
                 self._get_gas_v_esc(self._gas)
 
@@ -211,6 +219,8 @@ class Galaxy:
             remain_idces = np.isin(self.gas["idces"], overlap_indices)
             result_array[remain_idces] = True
             self._remain_gas = map_to_new_dict(self.gas, result_array)
+            not_inflow = np.array(self._remain_gas['Relative_Distances'])<2*self.halo.r_SFR.values[0]
+            self._remain_gas = map_to_new_dict(self._remain_gas, not_inflow)
         return self._remain_gas
 
     """Selects the part of the central galaxy that is outflowing.
@@ -299,7 +309,7 @@ class Galaxy:
         particles["Relative_Distances"] = np.sqrt(
             np.sum(np.square(particles["Coordinates"]), axis=1)
         )
-        particles["SFR_dist"] = particles["Relative_Distances"] / float(
+        particles["SFR_dist"] = particles["Relative_Distances"] / 2*float(
             self.halo.r_SFR
         )
         particles["SFR_dist"][particles["SFR_dist"] < 1] = 1
@@ -540,10 +550,14 @@ class Galaxy:
         m_dot = np.sum(gas["Masses"] * gas["Flow_Velocities"] / self.cut_r)
         return m_dot
 
-    def get_outflow_metallicity(self, cold_only=False):
-        if cold_only:
-            gas = self.cold_out_gas
-        else:
-            gas = self.out_gas
+    def get_outflow_metallicity(self, cold_only=False, type="out"):
+        if type == "out":
+            if cold_only:
+                gas = self.cold_out_gas
+            else:
+                gas = self.out_gas
+
+        elif type == "remain":
+                gas = self.remain_gas
         Z = np.average(gas["GFM_Metallicity"], weights=gas["Masses"])
         return Z
