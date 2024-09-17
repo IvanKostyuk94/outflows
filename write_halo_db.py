@@ -2,6 +2,8 @@ import os
 import h5py
 from config import config
 from utils import get_halo_data
+import pandas as pd
+from process_gas import Galaxy
 
 
 class GalaxyWriter:
@@ -18,7 +20,6 @@ class GalaxyWriter:
         if self._data_of_interest is None:
             self._data_of_interest = {
                 "full_galaxy",
-                "out_galaxy",
                 "out_gas",
                 "remain_gas",
             }
@@ -97,7 +98,19 @@ class GalaxyWriter:
             return hdf_file[group_name]
         else:
             return hdf_file.create_group(group_name)
-
+        
+if __name__ == "__main__":
+    df_path = "/ptmp/mpa/ivkos/outflows/all_galaxies_extended.hdf5"
+    n_sample = 1000
+    df = pd.read_hdf(df_path)
+    sample = df[(df.M_star_log>8)&(df.M_star_log<9)&(df.snap>17)].sample(n_sample)
+    counter = 0
+    for idx, row in sample.iterrows():
+        print(counter)
+        counter += 1
+        galaxy = Galaxy(df, int(row.Halo_id), int(row.snap))
+        writer = GalaxyWriter(galaxy, "sample")
+        writer.save_to_db()
 
 ## Keep this here to add the history writing later on
 # def write_halo_db(
