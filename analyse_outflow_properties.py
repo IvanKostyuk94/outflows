@@ -52,13 +52,11 @@ class OutflowPropUpdater:
     def df(self):
         if self._df is None:
             self._df = pd.read_hdf(self.df_path)
-            # quick hack to fix a problem, this should be uncommented
-
-            # self._df = self._df[
-            #     (self.df.snap >= self.snap_range[0])
-            #     & (self.df.snap <= self.snap_range[1])
-            #     & (self.df.M_star_log > 7.5)
-            # ].copy(deep=True)
+            self._df = self._df[
+                (self.df.snap >= self.snap_range[0])
+                & (self.df.snap <= self.snap_range[1])
+                & (self.df.M_star_log > 7.5)
+            ].copy(deep=True)
 
         return self._df
 
@@ -238,7 +236,7 @@ class OutflowPropUpdater:
 
     def get_offset_W80(self, gas):
         try:
-            v_range = np.quantile(gas["Relative_Velocities"], [0.05, 0.1, 0.9, 0.95])
+            v_range = np.quantile(gas["los_Velocities"], [0.05, 0.1, 0.9, 0.95])
             delta_v = (v_range[3] + v_range[0]) / 2
             W80 = v_range[2] - v_range[1]
         except:
@@ -247,13 +245,7 @@ class OutflowPropUpdater:
         return delta_v, W80
 
     def add_outflow_W80(self):
-        # quick hack should be removed afterwards
-        iteration_df = self.df[
-            (self.df.snap >= self.snap_range[0])
-            & (self.df.snap <= self.snap_range[1])
-            & (self.df.M_star_log > 7.5)
-        ]
-        # iteration_df = self.df
+        iteration_df = self.df
         counter = 0
         phi_angles = [0, 30, 60, 90]
         theta_angles = [0, 30, 60, 90, 120, 150]
@@ -278,7 +270,6 @@ class OutflowPropUpdater:
                         projection_angle_phi=phi,
                     )
                     try:
-                        gal.line_of_sight_projection()
                         gal.project_outflows()
 
                         delta_v_galaxy, W80_galaxy = self.get_offset_W80(gal.remain_gas)
@@ -320,12 +311,13 @@ class OutflowPropUpdater:
 
 if __name__ == "__main__":
     updater = OutflowPropUpdater(
-        # "all_galaxies_extended",
-        "updated_with_W80_angles",
+        "all_galaxies_extended",
+        # "updated_with_W80_angles",
         # "updated_with_M_out",
         # save_name="test",
-        save_name="updated_with_W80_angles_full",
-        snap_range=[23, 25],
+        save_name="updated_with_W80_angles",
+        # save_name="test",
+        snap_range=[17, 25],
         # snap_range=[0, 5],
         with_quantile=False,
         only_shell=False,
