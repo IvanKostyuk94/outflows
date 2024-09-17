@@ -34,9 +34,14 @@ class GasGridder(GalaxyProjections):
 
         self.n_threads = n_threads
 
-        self.box_size = (
-            0.7 * self.cut_factor * self.scale_radius * 2 * np.ones(3)
-        )
+        if self.fixed_selection:
+            self.box_size = (
+                0.7 * self.cut_r * (1+self.z) * 2 * np.ones(3)
+            )
+        else:
+            self.box_size = (
+                0.7 * self.cut_r *  2 * np.ones(3)
+            )
         self.shape = (grid_size * np.ones(3)).astype(np.int64)
         self.grid_cen = np.array([0, 0, 0])
 
@@ -65,17 +70,17 @@ class GasGridder(GalaxyProjections):
             self._grids = [grid]
 
             if self.out_gas_sel == "GMM":
-                galaxy_gridded = self._get_gridded(gas=self.out_galaxy)
-                self._normalize(galaxy_gridded)
-                self._grids.append(galaxy_gridded)
+                # galaxy_gridded = self._get_gridded(gas=self.out_galaxy)
+                # self._normalize(galaxy_gridded)
+                # self._grids.append(galaxy_gridded)
 
                 outflow_gridded = self._get_gridded(gas=self.out_gas)
                 self._normalize(outflow_gridded)
                 self._grids.append(outflow_gridded)
 
-                # remain_gridded = self._get_gridded(gas=self.remain_gas)
-                # self._normalize(remain_gridded)
-                # self._grids.append(remain_gridded)
+                remain_gridded = self._get_gridded(gas=self.remain_gas)
+                self._normalize(remain_gridded)
+                self._grids.append(remain_gridded)
 
             elif (self.out_gas_sel == "v_esc_ratio") or (
                 self.out_gas_sel == "v_crit"
@@ -98,6 +103,8 @@ class GasGridder(GalaxyProjections):
         ]
         if len(filtered_quants) == 0:
             filtered_quants = None
+        if "v_z" in self.quants:
+            gas["v_z"] = np.float32(gas["Relative_Velocities"][:, 2])
         grids = gridding.depositParticlesOnGrid(
             gas_parts=gas,
             method="sphKernelDep",
@@ -182,6 +189,8 @@ class GasGridder(GalaxyProjections):
             "GFM_Metallicity",
             "Temperature",
             "los_Velocities",
+            "Relative_Velocities_abs",
+            "v_z",
         }
         if prop in mass_weighted_props:
             image = self._get_mass_weighted_image(number, dir, prop)
