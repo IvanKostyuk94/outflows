@@ -6,7 +6,7 @@ import astropy.constants as c
 from pyTNG import gas_temperature
 from pyTNG.cosmology import TNGcosmo
 from scipy.spatial.transform import Rotation as R
-from scipy.integrate import cumtrapz
+from scipy.integrate import cumulative_trapezoid as cumtrapz
 from gaussian_outflow_selection import (
     group_gas,
     select_galaxy_group,
@@ -38,6 +38,7 @@ class Galaxy:
         out_gas_sel="GMM",
         v_esc_ratio=0.3,
         with_rotation=False,
+        fixed_selection=True,
     ):
 
         self._halo = None
@@ -55,6 +56,7 @@ class Galaxy:
         self.halo_id = halo_id
         self.snap = snap
         self.galaxy_id = int(self.halo.idx)
+        self.fixed_selection = fixed_selection
         # self.scale_radius = float(self.halo.r_SFR)
 
         self.cut_factor = cut_factor
@@ -65,6 +67,7 @@ class Galaxy:
         self.with_rotation = with_rotation
         self.critical_velocity = 2 * self.halo.SubhaloVelDisp.values[0]
         self.critical_out_velocity = 2 * self.halo.SubhaloVelDisp.values[0]
+        self.fixed_radius = 3.5
         # self.critical_velocity = 50
 
         if self.halo.M_star_log.values[0] < 9:
@@ -73,7 +76,13 @@ class Galaxy:
         elif self.halo.M_star_log.values[0] > 9:
             self.scale_radius = float(self.halo.Galaxy_GHMR) / 10
             self.n_peak = 2
-        self.cut_r = self.cut_factor * self.scale_radius
+        if fixed_selection:
+            if self.halo.M_star_log.values[0] < 9.5:
+                self.scale_radius = float(self.halo.r_SFR)
+            elif self.halo.M_star_log.values[0] > 9.5:
+                self.cut_r = 5
+        else:
+            self.cut_r = self.cut_factor * self.scale_radius
         if self.cut_r > self.r_vir:
             self.cut_r = self.r_vir
         if out_gas_sel in self.out_gas_selections:
@@ -295,7 +304,10 @@ class Galaxy:
             return moving_gas
 
     def _cut_gal_scale(self, gas):
-        relevant_gas = gas["Relative_Distances"] < self.cut_r
+        if self.fixed_selection:
+            relevant_gas = gas["Physical_Relative_Distances"] < self.cut_r
+        else:
+            relevant_gas = gas["Relative_Distances"] < self.cut_r
         gas = map_to_new_dict(gas, relevant_gas)
         return gas
 
@@ -303,12 +315,14 @@ class Galaxy:
         if "Abs_Coordinates" not in particles.keys():
             particles["Abs_Coordinates"] = np.copy(particles["Coordinates"])
             particles["Coordinates"] = particles["Coordinates"] - self.gal_pos
+            particles["Physical_Coordinates"] = particles["Coordinates"] * 1 / (1 + self.z)
         return
 
     def _get_relative_distances(self, particles):
         particles["Relative_Distances"] = np.sqrt(
             np.sum(np.square(particles["Coordinates"]), axis=1)
         )
+        particles["Physical_Relative_Distances"] = np.sqrt(np.sum(np.square(particles["Physical_Coordinates"]), axis=1))
         particles["SFR_dist"] = particles["Relative_Distances"] / 2*float(
             self.halo.r_SFR
         )
