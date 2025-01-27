@@ -87,7 +87,63 @@ class R_SFR_Updater:
         self.add_sfr_radius_column()
         self.save_df()
 
+def compute_r_sfr_serra(df):
+    df['r_SFR'] = np.nan
+    counter = 0
+    for _, row in df.iterrows():
+        idx = int(row.idx)
+        snap = int(row.snap)    
+        gal = Galaxy(df, halo_id=idx, snap=snap, serra=True, fixed_selection=True)
+        gas = gal.gas
+        sort_all_keys(gas, 'Relative_Distances')
+        tot_sfr = gas['StarFormationRate'].sum()
+        sfr_cum = np.cumsum(gas["StarFormationRate"])
+        index_SFR = np.searchsorted(sfr_cum, tot_sfr / 2, side="right")
+        try:
+            r_SFR = gas["Relative_Distances"][index_SFR]
+        except IndexError:
+            r_SFR = np.nan
+        df.loc[(df.snap == row.snap) & (df.idx == row.idx),
+                "r_SFR",
+            ] = r_SFR
+        if counter % 100 == 0:
+            print(f"Processed {counter/len(df)*100:.2f}% of galaxies")
+        counter += 1
+    return 
+
+def compute_sfr_serra(df):
+    df['StarFormationRate'] = np.nan
+    counter = 0
+    for _, row in df.iterrows():
+        idx = int(row.idx)
+        snap = int(row.snap)    
+        gal = Galaxy(df, halo_id=idx, snap=snap, serra=True, fixed_selection=True)
+        gas = gal.gas
+        tot_sfr = gas['StarFormationRate'].sum()
+        df.loc[(df.snap == row.snap) & (df.idx == row.idx),
+                "StarFormationRate",
+            ] = tot_sfr
+        if counter % 100 == 0:
+            print(f"Processed {counter/len(df)*100:.2f}% of galaxies")
+        counter += 1
+    return 
+
+def add_rSFR_serra(name='serra_base'):
+    df_path = os.path.join(config['base_path'], name + config['hdf_ending'])
+    df = pd.read_hdf(df_path)
+    compute_r_sfr_serra(df)
+    df.to_hdf(df_path, key=config["hdf_key"])
+    return
+
+
+def add_SFR_serra(name='serra_outflows_W80'):
+    df_path = os.path.join(config['base_path'], name + config['hdf_ending'])
+    df = pd.read_hdf(df_path)
+    compute_sfr_serra(df)
+    df.to_hdf(df_path, key=config["hdf_key"])
+    return
 
 if __name__ == "__main__":
-    updater = R_SFR_Updater(df_name="all_galaxies_new.hdf5")
-    updater.update_df()
+    # updater = R_SFR_Updater(df_name="all_galaxies_new.hdf5")
+    # updater.update_df()
+    add_SFR_serra()
