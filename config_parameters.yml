@@ -6,6 +6,7 @@ sim_name: "L35n2160TNG"
 
 # sim_name: "L75n1820TNG"
 merger_history_path : "/virgotng/universe/IllustrisTNG/L35n2160TNG/postprocessing/trees/SubLink_gal/tree_extended.hdf5"
+sfr_hist_path : "/virgotng/universe/IllustrisTNG/L35n2160TNG/postprocessing/StarFormationRates"
 hdf_key: "galaxies"
 
 # Directory prefixes where dataframes will be stored should get the snap number attached
