@@ -16,6 +16,9 @@ class OutflowPropUpdater:
         snap_range=None,
         with_quantile=False,
         only_shell=False,
+        in_aperture=False,
+        aperture_size=0.3,
+        serra=False,
     ):
         self.df_name = df_name + config["hdf_ending"]
         self.snap_range = snap_range
@@ -24,6 +27,9 @@ class OutflowPropUpdater:
 
         self.group_props = group_props
         self.with_quantile = with_quantile
+        self.in_aperture = in_aperture
+        self.aperture_size = aperture_size
+        self.serra = serra
 
         self._df_path = None
         self._save_path = None
@@ -66,31 +72,34 @@ class OutflowPropUpdater:
             halo_id=halo_id,
             snap=snap,
             group_props=self.group_props,
+            serra=self.serra,
+            aperture_size=self.aperture_size,
         )
         keys = [
-            "M_out",
-            "M_dot",
-            "v_lum",
-            "v_mass",
-            "M_out_cold",
-            "M_dot_cold",
-            "v_lum_cold",
-            "v_mass_cold",
+            "M_out_0.6",
+            "M_dot_0.6",
+            # "v_lum",
+            # "v_mass",
+            # "M_out_cold",
+            # "M_dot_cold",
+            # "v_lum_cold",
+            # "v_mass_cold",
         ]
         out_props = {}
+
         try:
-            out_props["M_out"] = gal.get_outflow_mass()
-            out_props["M_dot"] = gal.get_flow_rate()
-            out_props["v_lum"] = gal.get_average_outflow_vel(weighting="Luminosity")
-            out_props["v_mass"] = gal.get_average_outflow_vel(weighting="Masses")
-            out_props["M_out_cold"] = gal.get_outflow_mass(cold_only=True)
-            out_props["M_dot_cold"] = gal.get_flow_rate(cold_only=True)
-            out_props["v_lum_cold"] = gal.get_average_outflow_vel(
-                weighting="Luminosity", cold_only=True
-            )
-            out_props["v_mass_cold"] = gal.get_average_outflow_vel(
-                weighting="Masses", cold_only=True
-            )
+            out_props["M_out_0.6"] = gal.get_outflow_mass(in_aperture=self.in_aperture)
+            out_props["M_dot_0.6"] = gal.get_flow_rate(in_aperture=self.in_aperture)
+            # out_props["v_lum"] = gal.get_average_outflow_vel(weighting="Luminosity", in_aperture=self.in_aperture)
+            # out_props["v_mass"] = gal.get_average_outflow_vel(weighting="Masses", in_aperture=self.in_aperture)
+            # out_props["M_out_cold"] = gal.get_outflow_mass(cold_only=True)
+            # out_props["M_dot_cold"] = gal.get_flow_rate(cold_only=True)
+            # out_props["v_lum_cold"] = gal.get_average_outflow_vel(
+            #     weighting="Luminosity", cold_only=True
+            # )
+            # out_props["v_mass_cold"] = gal.get_average_outflow_vel(
+            #     weighting="Masses", cold_only=True
+            # )
         except:
             for key in keys:
                 out_props[key] = None
@@ -105,6 +114,7 @@ class OutflowPropUpdater:
                 halo_id=halo_id,
                 snap=snap,
                 radius=10,
+                serra=self.serra,
             )
         else:
             gal = Galaxy(
@@ -112,27 +122,38 @@ class OutflowPropUpdater:
                 halo_id=halo_id,
                 snap=snap,
                 group_props=self.group_props,
+                serra=self.serra,
             )
         keys = []
         out_vels = {}
-        quantiles = [0.5, 0.75, 0.9]
-        weightings = ["Luminosity", "Masses", "Flux"]
-        subscripts = ["lum", "mass", "mdot"]
+        quantiles = [0.5, 0.8, 0.9]
+        # weightings = ["Luminosity", "Masses", "Flux"]
+        weightings = ["Masses"]
+        
+        # subscripts = ["lum", "mass", "mdot"]
+        subscripts = ["mass"]
+
         temps = ["", "_cold"]
         for sub, weighting in zip(subscripts, weightings):
             for quantile in quantiles:
-                for i, temp in enumerate(temps):
-                    column_name = f"v_{sub}_{int(quantile*100)}{temp}"
-                    keys.append(column_name)
+                # for i, temp in enumerate(temps):
+                    # column_name = f"v_{sub}_{int(quantile*100)}{temp}"
+                column_name = f"v_{sub}_{int(quantile*100)}"
+                keys.append(column_name)
+
         try:
             for sub, weighting in zip(subscripts, weightings):
                 for quantile in quantiles:
-                    for i, temp in enumerate(temps):
-                        column_name = f"v_{sub}_{int(quantile*100)}{temp}"
-                        out_vels[column_name] = gal.get_quantile_velocity(
-                            quantile, weighting=weighting, cold_only=bool(i)
-                        )
-        except:
+                    # for i, temp in enumerate(temps):
+                        # column_name = f"v_{sub}_{int(quantile*100)}{temp}"
+                    column_name = f"v_{sub}_{int(quantile*100)}"
+                    out_vels[column_name] = gal.get_quantile_velocity(
+                        quantile, weighting=weighting, in_aperture=self.in_aperture)
+
+                    # out_vels[column_name] = gal.get_quantile_velocity(
+                    #     quantile, weighting=weighting, cold_only=bool(i)
+                    # )
+        except ValueError:
             for key in keys:
                 out_vels[key] = None
 
@@ -167,7 +188,10 @@ class OutflowPropUpdater:
         counter = 0
         for _, element in iteration_df.iterrows():
             counter += 1
-            halo_id = int(element.Halo_id)
+            if self.serra:
+                halo_id = int(element.idx)
+            else:
+                halo_id = int(element.Halo_id)
             snap = int(element.snap)
             # if self._has_value(halo_id=halo_id, snap=snap):
             #     continue
@@ -196,17 +220,26 @@ class OutflowPropUpdater:
             self.df["outflow_Z"] = np.nan * np.ones(len(self.df))
             self.df["remain_Z"] = np.nan * np.ones(len(self.df))
 
-            # self.df["outflow_Z_warm"] = np.nan * np.ones(len(self.df))
+        if self.in_aperture:
+            if "outflow_Z_aperture" not in self.df.keys():
+                self.df["outflow_Z_aperture"] = np.nan * np.ones(len(self.df))
+                self.df["remain_Z_aperture"] = np.nan * np.ones(len(self.df))
 
+            # self.df["outflow_Z_warm"] = np.nan * np.ones(len(self.df))
         for _, element in iteration_df.iterrows():
             counter += 1
-            halo_id = int(element.Halo_id)
+            if self.serra:
+                halo_id = int(element.idx)
+            else:
+                halo_id = int(element.Halo_id)
             snap = int(element.snap)
             gal = Galaxy(
                 df=self.df,
                 halo_id=halo_id,
                 snap=snap,
                 group_props=self.group_props,
+                aperture_size=self.aperture_size,
+                serra=self.serra,
             )
             try:
                 self.df.loc[
@@ -218,6 +251,32 @@ class OutflowPropUpdater:
                     (self.df.snap == snap) & (self.df.Halo_id == halo_id),
                     "remain_Z",
                 ] = gal.get_outflow_metallicity(cold_only=False, type="remain")
+
+                if self.in_aperture:
+                    try:
+                        self.df.loc[
+                            (self.df.snap == snap) & (self.df.Halo_id == halo_id),
+                            "outflow_Z_aperture",
+                        ] = gal.get_outflow_metallicity(
+                            cold_only=False, type="out", in_aperture=True
+                        )
+
+                        self.df.loc[
+                            (self.df.snap == snap) & (self.df.Halo_id == halo_id),
+                            "remain_Z_aperture",
+                        ] = gal.get_outflow_metallicity(
+                            cold_only=False, type="remain", in_aperture=True
+                        )
+                    except:
+                        self.df.loc[
+                            (self.df.snap == snap) & (self.df.Halo_id == halo_id),
+                            "outflow_Z_aperture",
+                        ] = np.nan
+
+                        self.df.loc[
+                            (self.df.snap == snap) & (self.df.Halo_id == halo_id),
+                            "remain_Z_aperture",
+                        ] = np.nan
             except:
                 self.df.loc[
                     (self.df.snap == snap) & (self.df.Halo_id == halo_id),
@@ -247,19 +306,38 @@ class OutflowPropUpdater:
     def add_outflow_W80(self):
         iteration_df = self.df
         counter = 0
-        phi_angles = [0, 30, 60, 90]
-        theta_angles = [0, 30, 60, 90, 120, 150]
-        keys = ["W80_outflow", "delta_v_outflow", "W80_galaxy", "delta_v_galaxy"]
+        phi_angles = [0]
+        theta_angles = [0, 30, 60, 90]
+        keys = [
+            "W80_outflow",
+            "delta_v_outflow",
+            "W80_galaxy",
+            "delta_v_galaxy",
+            "W80_outflow_aperture",
+            "delta_v_outflow_aperture",
+            "W80_galaxy_aperture",
+            "delta_v_galaxy_aperture",
+        ]
         for phi in phi_angles:
             for theta in theta_angles:
                 for key in keys:
-                    if f"{key}_{phi}_{theta}" not in self.df.keys():
-                        self.df[f"{key}_{phi}_{theta}"] = np.nan * np.ones(len(self.df))
+                    # if f"{key}_{phi}_{theta}" not in self.df.keys():
+                    self.df[f"{key}_{phi}_{theta}"] = np.nan * np.ones(len(self.df))
+                    if self.in_aperture:
+                        self.df[f"{key}_{phi}_{theta}_aperture"] = np.nan * np.ones(
+                            len(self.df)
+                        )
 
         for _, element in iteration_df.iterrows():
             counter += 1
-            halo_id = int(element.Halo_id)
+            if self.serra:
+                halo_id = int(element.idx)
+            else:
+                halo_id = int(element.Halo_id)
             snap = int(element.snap)
+            # # quick hack
+            # if snap < 23:
+            #     continue
             for phi in phi_angles:
                 for theta in theta_angles:
                     gal = GalaxyProjections(
@@ -268,17 +346,29 @@ class OutflowPropUpdater:
                         snap=snap,
                         projection_angle_theta=theta,
                         projection_angle_phi=phi,
+                        aperture_size=self.aperture_size,
+                        serra=self.serra,
                     )
                     try:
                         gal.project_outflows()
+                        if self.in_aperture:
+                            remain_gas = gal.get_in_aperture(gal.remain_gas)
+                            out_gas = gal.get_in_aperture(gal.out_gas)
+                        else:
+                            remain_gas = gal.remain_gas
+                            out_gas = gal.out_gas
 
-                        delta_v_galaxy, W80_galaxy = self.get_offset_W80(gal.remain_gas)
-                        delta_v_outflow, W80_outflow = self.get_offset_W80(gal.out_gas)
+                        delta_v_galaxy, W80_galaxy = self.get_offset_W80(remain_gas)
+                        delta_v_outflow, W80_outflow = self.get_offset_W80(out_gas)
                     except:
                         delta_v_galaxy = np.nan
                         W80_galaxy = np.nan
                         delta_v_outflow = np.nan
                         W80_outflow = np.nan
+                        delta_v_galaxy_aperture = np.nan
+                        W80_galaxy_aperture = np.nan
+                        delta_v_outflow_aperture = np.nan
+                        W80_outflow_aperture = np.nan
 
                     self.df.loc[
                         (self.df.snap == snap) & (self.df.Halo_id == halo_id),
@@ -300,30 +390,59 @@ class OutflowPropUpdater:
                         f"W80_outflow_{phi}_{theta}",
                     ] = W80_outflow
 
+                    if self.in_aperture:
+                        self.df.loc[
+                            (self.df.snap == snap) & (self.df.Halo_id == halo_id),
+                            f"delta_v_galaxy_{phi}_{theta}_aperture",
+                        ] = delta_v_galaxy_aperture
+
+                        self.df.loc[
+                            (self.df.snap == snap) & (self.df.Halo_id == halo_id),
+                            f"W80_galaxy_{phi}_{theta}_aperture",
+                        ] = W80_galaxy_aperture
+
+                        self.df.loc[
+                            (self.df.snap == snap) & (self.df.Halo_id == halo_id),
+                            f"delta_v_outflow_{phi}_{theta}_aperture",
+                        ] = delta_v_outflow_aperture
+
+                        self.df.loc[
+                            (self.df.snap == snap) & (self.df.Halo_id == halo_id),
+                            f"W80_outflow_{phi}_{theta}_aperture",
+                        ] = W80_outflow_aperture
+
             if counter % 100 == 0:
                 print(f"Processed {counter/len(iteration_df)*100:.2f}% of galaxies")
                 self.save_df()
         return
 
     def save_df(self):
-        self.df.to_hdf(self.save_path, "galaxies")
+        self.df.to_hdf(self.save_path, key="galaxies")
 
 
 if __name__ == "__main__":
     updater = OutflowPropUpdater(
-        "all_galaxies_extended",
+        # "in_aperture_06sec",
+        # "serra_base",
+        "serra_outflows_W80",       
+        # "Mout_7kpc_fixed_Mout",
+        # "Mout_7kpc_fixed",
         # "updated_with_W80_angles",
         # "updated_with_M_out",
         # save_name="test",
-        save_name="updated_with_W80_angles",
-        # save_name="test",
-        snap_range=[17, 25],
-        # snap_range=[0, 5],
+        # save_name="updated_with_W80_angles",
+        save_name="serra_outflows_W80_Z",
+        # save_name="serra_outflows_W80",
+        # snap_range=[13, 26],
+        snap_range=[39, 100],
         with_quantile=False,
         only_shell=False,
+        in_aperture=True,
+        aperture_size=0.6,
+        serra=True,
     )
     # updater.add_outflow_parameters()
-    updater.add_outflow_W80()
-    # updater.add_outflow_metallicity()
+    # updater.add_outflow_W80()
+    updater.add_outflow_metallicity()
 
     updater.save_df()
