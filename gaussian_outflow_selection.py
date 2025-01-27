@@ -130,12 +130,15 @@ def group_gas(
     return n_peak
 
 
-def select_galaxy_group(group_array):
+def select_galaxy_group(group_array, serra=False):
     median_dist_min = np.inf
     galaxy_group = 0
 
     for i, group in enumerate(group_array):
-        median_dist = np.median(group["Relative_Distances"])
+        if serra:
+            median_dist = np.average(group["Relative_Distances"], weights=group['Masses'])
+        else:
+            median_dist = np.median(group["Relative_Distances"])
         if median_dist < median_dist_min:
             galaxy_group = i
             median_dist_min = median_dist
