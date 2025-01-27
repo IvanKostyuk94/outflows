@@ -1,5 +1,6 @@
 from matplotlib import pyplot as plt
 from matplotlib import colors
+import seaborn as sns
 from matplotlib import colormaps
 import numpy as np
 import pandas as pd
@@ -19,8 +20,8 @@ def prop_labels(prop):
     prop_labels = {
         "Flow_Velocities": r"$v_\mathrm{out}$",
         "los_Velocities": r"$v_\mathrm{proj}$",
-        # "Masses": r"$\Sigma[\log(M_\odot)\mathrm{kpc}^{-2}]$",
-        "Masses": r"$M[\mathrm{a.u.}]$",
+        "Masses": r"$\Sigma[\log(M_\odot)\mathrm{kpc}^{-2}]$",
+        # "Masses": r"$M[\mathrm{a.u.}]$",
         "StarFormationRate": r"$\Sigma_\mathrm{SFR}[\log(M_\odot)\mathrm{yr}^{-1}\mathrm{kpc}^{-2}]$",
         "Temperature": r"$T[\log(K)]$",
         "GFM_Metallicity": r"$\log(Z)$",
@@ -49,6 +50,7 @@ def prop_labels(prop):
         "v_mass_75": r"$v_{\mathrm{out}, 75\mathrm{}}[\mathrm{km}/\mathrm{s}]$",
         "v_mass_75_cold": r"$v_{\mathrm{out}, 75\mathrm{,cold}}[\mathrm{km}/\mathrm{s}]$",
         "v_mass_90": r"$v_{\mathrm{out}, 90\mathrm{}}[\mathrm{km}/\mathrm{s}]$",
+        "v_mass_80": r"$v_{\mathrm{out}, 80\mathrm{}}[\mathrm{km}/\mathrm{s}]$",
         "v_mass_90_cold": r"$v_{\mathrm{out}, 90\mathrm{,cold}}[\mathrm{km}/\mathrm{s}]$",
         "v_mdot_50": r"$v_{\mathrm{out}, 50\mathrm{}}[\mathrm{km}/\mathrm{s}]$",
         "v_mdot_50_cold": r"$v_{\mathrm{out}, 50\mathrm{,cold}}[\mathrm{km}/\mathrm{s}]$",
@@ -65,12 +67,21 @@ def prop_labels(prop):
         "v_z": r"$v_z[\mathrm{km}/\mathrm{s}]$",
         "Distance": r"$M$[a.u.]",
         "M_out_log": r"$M_\mathrm{out}[\log(M_\odot)]$",
+        "M_out_aperture_log": r"$M_\mathrm{out, 0.6''}[\log(M_\odot)]$",
+        "M_out_aperture_log_03": r"$M_\mathrm{out, 0.3''}[\log(M_\odot)]$",
+
         "M_gas_log": r"$M_\mathrm{gas}[\log(M_\odot)]$",
         "SFR_log": r"$\mathrm{SFR}[\log(M_\odot/\mathrm{yr})]$",
         "W80_galaxy": r"$W_{80, \mathrm{gal}}[\log( \mathrm{km}/\mathrm{s} )]$",
         "W80_outflow": r"$W_{80, \mathrm{out}}[\log( \mathrm{km}/\mathrm{s} )]$",
         "W_ratio": r"$W_{80, \mathrm{out}}/W_{80, \mathrm{gal}}$",
         "Z_ratio": r"$Z_\mathrm{out}/Z_\mathrm{gal}$",
+        "Z_ratio_aperture": r"$Z_\mathrm{out, 0.6''}/Z_\mathrm{gal, 0.6''}$",
+        "v_mass_aperture":r"$v_{\mathrm{out, 0.6''}}[\mathrm{km}/\mathrm{s}]$",
+        "sfr_0_log": r"$\mathrm{SFR}_{0}[\log(M_\odot/\mathrm{yr})]$",
+        "sfr_10_log": r"$\mathrm{SFR}_{10}[\log(M_\odot/\mathrm{yr})]$",
+        "sfr_50_log": r"$\mathrm{SFR}_{50}[\log(M_\odot/\mathrm{yr})]$",
+        "sfr_100_log": r"$\mathrm{SFR}_{100}[\log(M_\odot/\mathrm{yr})]$",
     }
     return prop_labels[prop]
 
@@ -81,9 +92,9 @@ def get_ranges(prop, parameters):
     #     parameters["vcenter"] = 150
     #     parameters["vmax"] = 250
     if prop == "Flow_Velocities":
-        parameters["vmin"] = -250
+        parameters["vmin"] = -110
         parameters["vcenter"] = 0
-        parameters["vmax"] = 250
+        parameters["vmax"] = 110
 
     elif prop == "los_Velocities":
         parameters["vmin"] = -250
@@ -134,6 +145,11 @@ def get_ranges(prop, parameters):
         parameters["vmin"] = -3
         parameters["vcenter"] = 0
         parameters["vmax"] = 3
+
+    elif prop == "sfr_100_log":
+        parameters["vmin"] = -3
+        parameters["vcenter"] = 0
+        parameters["vmax"] = 3
     return
 
 
@@ -165,10 +181,13 @@ def get_cmap(prop):
         "v_z",
     }
     if prop in coolwarm_props:
-        cmap = "coolwarm"
+        hue_neg, hue_pos = 250, 15
+        colormap = sns.diverging_palette(hue_neg, hue_pos, center="dark", as_cmap=True)
+        # cmap = "coolwarm"
     else:
         cmap = "inferno"
-    return colormaps[cmap]
+        colormap = colormaps[cmap]
+    return colormap
 
 
 def create_color_bar(
@@ -205,7 +224,8 @@ def create_color_bar(
     cbar.ax.tick_params(labelsize=ticksize)
 
     if prop == "Flow_Velocities":
-        cbar.ax.set_yticks([-200, -100, 0, 100, 200], labelsize=ticksize)
+        cbar.ax.set_yticks([-100, -50, 0, 50, 100, 100])  # Set tick positions
+        cbar.ax.set_yticklabels([-100, -50, 0, 50, 100, 100], fontsize=ticksize)
     return
 
 
@@ -264,9 +284,20 @@ def plot_prop_maps(gridder, prop, dirs, sizebar_length=1):
     rows = len(gridder.grids)
     fig, axs = setup_prop_parameters(parameters, columns, rows)
 
+    fontsize = parameters["label_fontsize"]
+    axs[0, 0].set_title("Edge on", fontsize=fontsize)
+    axs[0, 1].set_title("Face on", fontsize=fontsize)
+    gas_types = ['all', 'outflow', 'remain']
     for row in range(rows):
         for column in range(columns):
             ax = axs[row, column]
+            if column == 0:
+                # if prop == "Flow_Velocities":
+                #     color='black'
+                # else:
+                #     color='white'
+                color='white'
+                ax.text(2, 93,gas_types[row], fontsize=20, color=color)
             cmap = get_cmap(prop=prop)
 
             if column < (columns - 1):
@@ -664,6 +695,7 @@ def get_histogram_2d(
 ):
     if statistic == "quantile":
         statistic = partial(get_quantile, quantile=quant)
+
     hist, *_ = stats.binned_statistic_2d(
         x_values,
         y_values,
@@ -700,7 +732,10 @@ def prop_prop_histogram(
     color_log=False,
     contour=True,
     quantile=None,
+    for_slides=False,
+    title=None,
 ):
+    label_colors(for_slides)
     if color_log:
         df["color_prop"] = np.log10(df[color_prop])
         color_prop = "color_prop"
@@ -719,6 +754,13 @@ def prop_prop_histogram(
 
     x_edges = np.linspace(x_values.min(), x_values.max(), bins_x)
     y_edges = np.linspace(y_values.min(), y_values.max(), bins_y)
+    if 'sfr_' in prop_y:
+        y_edges = np.linspace(-3, 3, bins_y)
+    
+    if 'v_' in prop_y:
+        y_edges = np.linspace(0, 950, bins_y)
+
+
 
     hist, hist_cont, xedges_cont, yedges_cont = get_histogram_2d(
         df,
@@ -741,7 +783,9 @@ def prop_prop_histogram(
     if statistic == "count":
         col_norm = colors.TwoSlopeNorm(vmin=0, vcenter=1.5, vmax=3)
     else:
-        col_norm = colors.TwoSlopeNorm(vmin=7, vcenter=8.5, vmax=10)
+        # col_norm = colors.TwoSlopeNorm(vmin=6, vcenter=8, vmax=10)
+        col_norm = colors.TwoSlopeNorm(vmin=6, vcenter=7, vmax=8)
+
     f, axs = plt.subplots(
         ncols=2,
         nrows=1,
@@ -759,19 +803,23 @@ def prop_prop_histogram(
         x_grid, y_grid, hist.T, norm=col_norm, cmap=plt.get_cmap("inferno")
     )
     jades = get_jades_data()
+    if for_slides:
+        color = 'red'
+    else:
+        color = 'blue'
     # ax.scatter(
     #     jades["M_star_log_Oiii"],
     #     jades["M_out_log_Oiii"],
     #     marker="*",
     #     s=150,
-    #     color='blue'
+    #     color=color
     # )
     # ax.scatter(
     #     jades["M_star_log_Ha"],
     #     jades["M_out_log_Ha"],
     #     marker="*",
     #     s=150,
-    #     color='blue',
+    #     color=color,
     #     label="JADES"
     # )
     # ax.scatter(
@@ -780,8 +828,9 @@ def prop_prop_histogram(
     #     c=jades["M_out_log_Oiii"],
     #     marker="*",
     #     s=150,
-    #     norm=col_norm,
-    #     cmap=plt.get_cmap("inferno"),
+    #     # color='red',
+    #     # norm=col_norm,
+    #     # cmap=plt.get_cmap("inferno"),
     # )
     # ax.scatter(
     #     jades["M_star_log_Ha"],
@@ -789,11 +838,32 @@ def prop_prop_histogram(
     #     c=jades["M_out_log_Ha"],
     #     marker="*",
     #     s=150,
+    #     # color='red',
     #     norm=col_norm,
     #     cmap=plt.get_cmap("inferno"),
     #     label="JADES"
     # )
-    # ax.legend(fontsize=15, loc="lower right")
+
+    # ax.scatter(
+    #     jades["M_star_log_Oiii"],
+    #     jades["SFR_log_Oiii"],
+    #     c=jades["M_out_log_Oiii"],
+    #     marker="*",
+    #     s=150,
+    #     norm=col_norm,
+    #     cmap=plt.get_cmap("inferno"),
+    # )
+    # ax.scatter(
+    #     jades["M_star_log_Ha"],
+    #     jades["SFR_log_Ha"],
+    #     c=jades["M_out_log_Ha"],
+    #     marker="*",
+    #     s=150,
+    #     norm=col_norm,
+    #     cmap=plt.get_cmap("inferno"),
+    #     label="JADES"
+    # )
+    ax.legend(fontsize=15, loc="upper left")
 
     for i in range(len(xedges_cont) - 1):
         for j in range(len(yedges_cont) - 1):
@@ -842,6 +912,9 @@ def prop_prop_histogram(
 
     ax.set_xlabel(prop_labels(prop_x), size=25)
     ax.set_ylabel(prop_labels(prop_y), size=25)
+    # ax.set_ylim(0, 300)
+    if title is not None:
+        ax.set_title(title, size=25)
     return
 
 
@@ -858,6 +931,7 @@ def plot_prop_maps_grouped(
     projection_angle_theta=None,
     projection_angle_phi=0,
     for_slides=False,
+    serra=False,
 ):
     label_colors(for_slides)
 
@@ -871,6 +945,7 @@ def plot_prop_maps_grouped(
         quants=props,
         projection_angle_theta=projection_angle_theta,
         projection_angle_phi=projection_angle_phi,
+        serra=serra,
     )
     for prop in props:
         plot_prop_maps(gridder, prop, dirs, sizebar_length)
@@ -897,7 +972,9 @@ def prop_prop_scatter(
     color_prop="M_out",
     log_x=False,
     log_y=False,
+    for_slides=False,
 ):
+    label_colors(for_slides)
     parameters = plot_parameters_comp()
 
     df.dropna(subset=prop_x, inplace=True)
@@ -937,23 +1014,27 @@ def prop_prop_scatter(
     )
     # ax = axs[0]
     # cax = axs[1]
-    subfig = ax.scatter(x_values, y_values, s=1, color="b", alpha=0.3, label="TNG data")
-    ax.scatter(
-        data["M_star_log_Oiii"],
-        data["M_out_log_Oiii"],
-        s=100,
-        color="r",
-        marker="*",
-        label="JADES data OIII",
-    )
-    ax.scatter(
-        data["M_star_log_Ha"],
-        data["M_out_log_Ha"],
-        s=100,
-        color="yellow",
-        marker="P",
-        label=r"JADES data H$\alpha$",
-    )
+    if for_slides:
+        color='r'
+    else:
+        color='b'
+    subfig = ax.scatter(x_values, y_values, s=1, color=color, alpha=0.3, label="TNG data")
+    # ax.scatter(
+    #     data["M_star_log_Oiii"],
+    #     data["M_out_log_Oiii"],
+    #     s=100,
+    #     color="r",
+    #     marker="*",
+    #     label="JADES data OIII",
+    # )
+    # ax.scatter(
+    #     data["M_star_log_Ha"],
+    #     data["M_out_log_Ha"],
+    #     s=100,
+    #     color="yellow",
+    #     marker="P",
+    #     label=r"JADES data H$\alpha$",
+    # )
 
     color_label = prop_labels(color_prop)
     # create_color_bar(
@@ -965,7 +1046,7 @@ def prop_prop_scatter(
     #     horizontal=False,
     # )
     ax.tick_params(labelsize=15)
-    ax.legend(fontsize=15)
+    # ax.legend(fontsize=15)
 
     ax.set_xlabel(prop_labels(prop_x), size=25)
     ax.set_ylabel(prop_labels(prop_y), size=25)
@@ -1003,7 +1084,7 @@ def get_detection_fraction(df, thresholds, bins=20):
         figsize=[10, 8],
     )
     for i, element in enumerate(fractions):
-        ax.plot(centers, element, label=rf"$10^{thresholds[i]}M_\odot$ threshold")
+        ax.plot(centers, element, label=rf"$10^{{{thresholds[i]}}} M_\odot$ threshold")
     ax.tick_params(labelsize=15)
     ax.legend(fontsize=15)
 
@@ -1011,7 +1092,8 @@ def get_detection_fraction(df, thresholds, bins=20):
     ax.set_ylabel("Fraction of detectable outflows", size=25)
     return
 
-def plot_W80_evolution(df, theta_angles=[0,30,60,90], phi_angles=[0], bins=100, cumulative=False):
+def plot_W80_evolution(df, theta_angles=[0,30,60,90], phi_angles=[0], bins=100, cumulative=False, for_slides=False, title=None, aperture=False):
+    label_colors(for_slides)
     bins = np.linspace(0, 5, 100)
     centers = (bins[1:]+bins[:-1])/2
     width = centers[1]-centers[0]
@@ -1026,8 +1108,13 @@ def plot_W80_evolution(df, theta_angles=[0,30,60,90], phi_angles=[0], bins=100, 
         figsize=(10, 8))
     for theta in theta_angles:
         for phi in phi_angles:
-            key1 = f"W80_outflow_{phi}_{theta}"
-            key2 = f"W80_galaxy_{phi}_{theta}"
+            if aperture:
+                key1 = f"W80_outflow_{phi}_{theta}_aperture"
+                key2 = f"W80_galaxy_{phi}_{theta}_aperture"
+            else:
+                key1 = f"W80_outflow_{phi}_{theta}"
+                key2 = f"W80_galaxy_{phi}_{theta}"
+            print(key1)
             ratios = df[key1]/df[key2]
             hist, _ = np.histogram(ratios, bins=bins, density=True)
             if cumulative:
@@ -1036,9 +1123,14 @@ def plot_W80_evolution(df, theta_angles=[0,30,60,90], phi_angles=[0], bins=100, 
             else:
                 y_values = hist
                 ax.bar(centers, y_values, width=centers[1]-centers[0], alpha=0.5, label=f"{theta} degrees")
-            
-            ax.axvline(x=1.2, linestyle='--', color='black')
-            ax.text(1, 0.3, r'$W_{80,out}/W_{80,gal} = 1.2$', fontsize=12, rotation=90)
+            if for_slides:
+                color='white'
+            else:
+                color='black'
+            ax.axvline(x=1.2, linestyle='--', color=color)
+            ax.text(1, 0.6, r'$W_{80,out}/W_{80,gal} = 1.2$', fontsize=12, rotation=90, color=color)
+            if title is not None:
+                ax.set_title(title, fontsize=25)
     if cumulative:
         y_label = r"CDF($W_{80,out}/W_{80,gal}$)"
         ax.set_ylim(0,1)
