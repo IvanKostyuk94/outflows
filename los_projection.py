@@ -22,6 +22,8 @@ class GalaxyProjections(Galaxy):
         projection_angle_phi=0,
         group_props=None,
         out_gas_sel="GMM",
+        aperture_size=0.3,
+        serra=False,
     ):
         super().__init__(
             df,
@@ -30,6 +32,8 @@ class GalaxyProjections(Galaxy):
             with_rotation=True,
             group_props=group_props,
             out_gas_sel=out_gas_sel,
+            aperture_size=aperture_size,
+            serra=serra,
         )
         self.angle_phi = projection_angle_phi
         self.angle_theta = projection_angle_theta
