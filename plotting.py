@@ -69,7 +69,6 @@ def prop_labels(prop):
         "M_out_log": r"$M_\mathrm{out}[\log(M_\odot)]$",
         "M_out_aperture_log": r"$M_\mathrm{out, 0.6''}[\log(M_\odot)]$",
         "M_out_aperture_log_03": r"$M_\mathrm{out, 0.3''}[\log(M_\odot)]$",
-
         "M_gas_log": r"$M_\mathrm{gas}[\log(M_\odot)]$",
         "SFR_log": r"$\mathrm{SFR}[\log(M_\odot/\mathrm{yr})]$",
         "W80_galaxy": r"$W_{80, \mathrm{gal}}[\log( \mathrm{km}/\mathrm{s} )]$",
@@ -77,11 +76,22 @@ def prop_labels(prop):
         "W_ratio": r"$W_{80, \mathrm{out}}/W_{80, \mathrm{gal}}$",
         "Z_ratio": r"$Z_\mathrm{out}/Z_\mathrm{gal}$",
         "Z_ratio_aperture": r"$Z_\mathrm{out, 0.6''}/Z_\mathrm{gal, 0.6''}$",
-        "v_mass_aperture":r"$v_{\mathrm{out, 0.6''}}[\mathrm{km}/\mathrm{s}]$",
+        "v_mass_aperture": r"$v_{\mathrm{out, 0.6''}}[\mathrm{km}/\mathrm{s}]$",
         "sfr_0_log": r"$\mathrm{SFR}_{0}[\log(M_\odot/\mathrm{yr})]$",
         "sfr_10_log": r"$\mathrm{SFR}_{10}[\log(M_\odot/\mathrm{yr})]$",
         "sfr_50_log": r"$\mathrm{SFR}_{50}[\log(M_\odot/\mathrm{yr})]$",
         "sfr_100_log": r"$\mathrm{SFR}_{100}[\log(M_\odot/\mathrm{yr})]$",
+        "SFR_hist10_log": r"$\mathrm{SFR}_{10}[\log(M_\odot/\mathrm{yr})]$",
+        "SFR_hist50_log": r"$\mathrm{SFR}_{50}[\log(M_\odot/\mathrm{yr})]$",
+        "SFR_hist100_log": r"$\mathrm{SFR}_{100}[\log(M_\odot/\mathrm{yr})]$",
+        "z": r"redshift",
+        "sSFR_log": r"$\mathrm{sSFR}[\log(\mathrm{yr}^{-1}]$",
+        "sSFR_log_100": r"$\mathrm{sSFR}_{100}[\log(\mathrm{yr}^{-1}]$",
+        "sOutflow": r"log($M_\mathrm{out}/M_\star$)",
+        "lookback": r"lookback time [Gyr]",
+        "BH_mdot_log": r'$\dot{M}_\mathrm{BH}[\log(M_\odot/\mathrm{Gyr})]$',
+        "eta_log": r'$\log(\eta)$',
+        "eta":r'$\eta$',
     }
     return prop_labels[prop]
 
@@ -287,7 +297,7 @@ def plot_prop_maps(gridder, prop, dirs, sizebar_length=1):
     fontsize = parameters["label_fontsize"]
     axs[0, 0].set_title("Edge on", fontsize=fontsize)
     axs[0, 1].set_title("Face on", fontsize=fontsize)
-    gas_types = ['all', 'outflow', 'remain']
+    gas_types = ["all", "outflow", "remain"]
     for row in range(rows):
         for column in range(columns):
             ax = axs[row, column]
@@ -296,8 +306,8 @@ def plot_prop_maps(gridder, prop, dirs, sizebar_length=1):
                 #     color='black'
                 # else:
                 #     color='white'
-                color='white'
-                ax.text(2, 93,gas_types[row], fontsize=20, color=color)
+                color = "white"
+                ax.text(2, 93, gas_types[row], fontsize=20, color=color)
             cmap = get_cmap(prop=prop)
 
             if column < (columns - 1):
@@ -664,19 +674,32 @@ def create_color_bar_hist(
     multiple=False,
     horizontal=False,
     gap=False,
-    prop="f_esc",
+    prop=None,
 ):
 
-    cbar = f.colorbar(subfig, cax=ax)
-    ax.xaxis.set_ticks_position("top")
-    ax.xaxis.set_label_position("top")
+    orientation = "horizontal" if horizontal else "vertical"
+    cbar = f.colorbar(subfig, cax=ax, orientation=orientation)
 
     size = 25
-    cbar.set_label(label, size=size, labelpad=18)
     ticksize = 15
+
+    if horizontal:
+        ax.xaxis.set_ticks_position("bottom")
+        ax.xaxis.set_label_position("top")
+        cbar.ax.set_xlabel(label, size=size, labelpad=10)
+        cbar.ax.tick_params(axis="x", labelsize=ticksize)
+    else:
+        ax.xaxis.set_ticks_position("top")
+        ax.xaxis.set_label_position("top")
+        cbar.set_label(label, size=size, labelpad=18)
+        cbar.ax.tick_params(axis="y", labelsize=ticksize)
+    # ax.xaxis.set_ticks_position("top")
+    # ax.xaxis.set_label_position("top")
+
+    cbar.set_label(label, size=size, labelpad=18)
+
     cbar.ax.tick_params(labelsize=ticksize)
-    if prop != "f_esc":
-        cbar.ax.set_xticks([0.5, 0.75, 1, 1.5, 2], labelsize=ticksize)
+    # cbar.ax.set_xticks([0.5, 0.75, 1, 1.5, 2], labelsize=ticksize)
     return
 
 
@@ -754,13 +777,11 @@ def prop_prop_histogram(
 
     x_edges = np.linspace(x_values.min(), x_values.max(), bins_x)
     y_edges = np.linspace(y_values.min(), y_values.max(), bins_y)
-    if 'sfr_' in prop_y:
+    if "sfr_" in prop_y:
         y_edges = np.linspace(-3, 3, bins_y)
-    
-    if 'v_' in prop_y:
+
+    if "v_" in prop_y:
         y_edges = np.linspace(0, 950, bins_y)
-
-
 
     hist, hist_cont, xedges_cont, yedges_cont = get_histogram_2d(
         df,
@@ -804,9 +825,9 @@ def prop_prop_histogram(
     )
     jades = get_jades_data()
     if for_slides:
-        color = 'red'
+        color = "red"
     else:
-        color = 'blue'
+        color = "blue"
     # ax.scatter(
     #     jades["M_star_log_Oiii"],
     #     jades["M_out_log_Oiii"],
@@ -1015,10 +1036,12 @@ def prop_prop_scatter(
     # ax = axs[0]
     # cax = axs[1]
     if for_slides:
-        color='r'
+        color = "r"
     else:
-        color='b'
-    subfig = ax.scatter(x_values, y_values, s=1, color=color, alpha=0.3, label="TNG data")
+        color = "b"
+    subfig = ax.scatter(
+        x_values, y_values, s=1, color=color, alpha=0.3, label="TNG data"
+    )
     # ax.scatter(
     #     data["M_star_log_Oiii"],
     #     data["M_out_log_Oiii"],
@@ -1092,12 +1115,23 @@ def get_detection_fraction(df, thresholds, bins=20):
     ax.set_ylabel("Fraction of detectable outflows", size=25)
     return
 
-def plot_W80_evolution(df, theta_angles=[0,30,60,90], phi_angles=[0], bins=100, cumulative=False, for_slides=False, title=None, aperture=False):
+
+def plot_W80_evolution(
+    df,
+    theta_angles=[0, 30, 60, 90],
+    phi_angles=[0],
+    bins=100,
+    cumulative=False,
+    for_slides=False,
+    title=None,
+    aperture=False,
+):
     label_colors(for_slides)
     bins = np.linspace(0, 5, 100)
-    centers = (bins[1:]+bins[:-1])/2
-    width = centers[1]-centers[0]
-    fig, ax = plt.subplots(ncols=1,
+    centers = (bins[1:] + bins[:-1]) / 2
+    width = centers[1] - centers[0]
+    fig, ax = plt.subplots(
+        ncols=1,
         nrows=1,
         gridspec_kw={
             "hspace": 0.1,
@@ -1105,7 +1139,8 @@ def plot_W80_evolution(df, theta_angles=[0,30,60,90], phi_angles=[0], bins=100, 
             "width_ratios": [24],
             "height_ratios": [24],
         },
-        figsize=(10, 8))
+        figsize=(10, 8),
+    )
     for theta in theta_angles:
         for phi in phi_angles:
             if aperture:
@@ -1115,30 +1150,114 @@ def plot_W80_evolution(df, theta_angles=[0,30,60,90], phi_angles=[0], bins=100, 
                 key1 = f"W80_outflow_{phi}_{theta}"
                 key2 = f"W80_galaxy_{phi}_{theta}"
             print(key1)
-            ratios = df[key1]/df[key2]
+            ratios = df[key1] / df[key2]
             hist, _ = np.histogram(ratios, bins=bins, density=True)
             if cumulative:
-                y_values = np.cumsum(hist*width)
+                y_values = np.cumsum(hist * width)
                 ax.plot(centers, y_values, label=f"{theta} degrees")
             else:
                 y_values = hist
-                ax.bar(centers, y_values, width=centers[1]-centers[0], alpha=0.5, label=f"{theta} degrees")
+                ax.bar(
+                    centers,
+                    y_values,
+                    width=centers[1] - centers[0],
+                    alpha=0.5,
+                    label=f"{theta} degrees",
+                )
             if for_slides:
-                color='white'
+                color = "white"
             else:
-                color='black'
-            ax.axvline(x=1.2, linestyle='--', color=color)
-            ax.text(1, 0.6, r'$W_{80,out}/W_{80,gal} = 1.2$', fontsize=12, rotation=90, color=color)
+                color = "black"
+            ax.axvline(x=1.2, linestyle="--", color=color)
+            ax.text(
+                1,
+                0.6,
+                r"$W_{80,out}/W_{80,gal} = 1.2$",
+                fontsize=12,
+                rotation=90,
+                color=color,
+            )
             if title is not None:
                 ax.set_title(title, fontsize=25)
     if cumulative:
         y_label = r"CDF($W_{80,out}/W_{80,gal}$)"
-        ax.set_ylim(0,1)
+        ax.set_ylim(0, 1)
     else:
         y_label = r"PDF($W_{80,out}/W_{80,gal}$)"
     ax.tick_params(labelsize=15)
-    ax.set_xlabel(r'$W_{80,out}/W_{80,gal}$', size=25)
+    ax.set_xlabel(r"$W_{80,out}/W_{80,gal}$", size=25)
     ax.set_ylabel(y_label, size=25)
     ax.legend(fontsize=15)
     return
 
+
+def plot_galaxy_evolution(
+    galaxies, prop_x, prop_y, color_prop, prop_y2=None, for_slides=False, title=None
+):
+    label_colors(for_slides)
+    if color_prop is not None:
+        f, axs = plt.subplots(
+            ncols=1,
+            nrows=2,
+            gridspec_kw={
+                "hspace": 0.2,
+                "wspace": 0.1,  # 0.3 * 0.75 * len(props_of_interest),
+                "width_ratios": [24],
+                "height_ratios": [1, 24],
+            },
+            figsize=[10, 10],
+        )
+        col_norm = colors.TwoSlopeNorm(vmin=-9, vcenter=-8.25, vmax=-7.5)
+        cax = axs[0]  # Positioning the color bar at the top
+        ax = axs[1]
+    else:
+        f, ax = plt.subplots(figsize=[10, 8])
+        cax = None
+    col_norm = colors.TwoSlopeNorm(vmin=-9, vcenter=-8.25, vmax=-7.5)
+
+    ax_right = ax.twinx() if prop_y2 else None
+
+    for id, galaxy in galaxies.items():
+        ax.plot(galaxy[prop_x], galaxy[prop_y], linewidth=2, color='red', label=f"$M_\star=10^{{{galaxy['M_star_log'][0]:.1f}}}M_\odot$")
+        if color_prop is not None:
+            subfig = ax.scatter(
+                galaxy[prop_x],
+                galaxy[prop_y],
+                marker="*",
+                c=galaxy[color_prop],
+                cmap=plt.get_cmap("inferno"),
+                s=500,
+                norm=col_norm,
+            )
+
+        if prop_y2 and ax_right:
+            ax_right.plot(
+                galaxy[prop_x], galaxy[prop_y2], linewidth=2, linestyle="dashed", color="blue")
+            # ax_right.scatter(
+            #     galaxy[prop_x], galaxy[prop_y2],
+            #     marker="o", color="blue", s=100,
+            # )
+        
+    if color_prop is not None:
+        color_label = prop_labels(color_prop)
+        create_color_bar_hist(
+            f,
+            cax,
+            subfig=subfig,
+            label=color_label,
+            gap=True,
+            horizontal=True,
+        )
+
+    if ax_right:
+        ax_right.set_ylabel(prop_labels(prop_y2), size=25, color="blue")
+        ax_right.tick_params(axis='y', labelcolor="blue", labelsize=15)
+        # ax_right.legend(fontsize=15, loc="upper right")
+    
+    ax.tick_params(labelsize=15)
+    ax.tick_params(axis="y", labelsize=15, labelcolor="red")
+    ax.set_xlabel(prop_labels(prop_x), size=25)
+    ax.set_ylabel(prop_labels(prop_y), size=25, color="red")
+    ax.legend(fontsize=15)
+
+    return
