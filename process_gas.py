@@ -664,7 +664,7 @@ class Galaxy:
                 gas = self.get_in_aperture(self.out_gas)
             else:
                 gas = self.out_gas
-        m_dot = np.sum(gas["Masses"] * gas["Flow_Velocities"] / self.cut_r)
+        m_dot = np.sum(gas["Masses"] * gas["Flow_Velocities"] / self.aperture_r)
         return m_dot
 
     def get_outflow_metallicity(self, cold_only=False, type="out", in_aperture=False):
