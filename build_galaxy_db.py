@@ -20,6 +20,8 @@ def get_halo_df(sim, snap_num):
     ]
     sub_dict = {key: dataset[key] for key in keys_needed}
     dataset_df = utils.dfFromArrDict(sub_dict)
+    for key in dataset_df.keys():
+        dataset_df[key] = dataset_df[key].astype(np.float64)
     return dataset_df
 
 
@@ -33,9 +35,12 @@ def get_galaxy_df(sim, snap_num):
         "SubhaloMassType",
         "SubhaloHalfmassRadType",
         "SubhaloBHMdot",
+        "SubhaloGrNr",
     ]
     sub_dict = {key: dataset[key] for key in keys_needed}
     dataset_df = utils.dfFromArrDict(sub_dict)
+    for key in dataset_df.keys():
+        dataset_df[key] = dataset_df[key].astype(np.float64)
     return dataset_df
 
 
@@ -74,6 +79,7 @@ def reduce_galaxy_df(df):
         Galaxy_vel_y=reduced_df[("SubhaloVel", 1)],
         Galaxy_vel_z=reduced_df[("SubhaloVel", 2)],
         BH_growth=reduced_df[("SubhaloBHMdot", 0)],
+        Parent = reduced_df[("SubhaloGrNr", 0)]
     )
     return new_df
 
