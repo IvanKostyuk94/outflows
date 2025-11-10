@@ -128,6 +128,7 @@ def outflow_props(df, halo_id, snap, aperture_size):
     )
     keys = ["M_out_0.6", "M_out", "M_dot"]
     out_props = {}
+    a = gal.get_outflow_mass(in_aperture=True)
 
     try:
         out_props["M_out_0.6"] = gal.get_outflow_mass(in_aperture=True)

@@ -4,18 +4,13 @@ import illustris_python as il
 from sklearn.decomposition import PCA
 import astropy.units as u
 import astropy.constants as c
-from utils import get_serra_gas, get_serra_stars
-from pyTNG import gas_temperature
-from pyTNG.cosmology import TNGcosmo
 from scipy.spatial.transform import Rotation as R
 from scipy.integrate import cumulative_trapezoid as cumtrapz
-from astropy.cosmology import Planck18 as cosmo 
-from gaussian_outflow_selection import (
-    group_gas,
-    select_galaxy_group,
-    get_only_outflowing_gas,
-)
+from astropy.cosmology import Planck18 as cosmo
+
 from utils import (
+    get_serra_gas,
+    get_serra_stars,
     get_sim,
     get_redshift,
     scale_factor,
@@ -25,11 +20,23 @@ from utils import (
     sort_all_keys,
     calculate_acc,
 )
+from pyTNG import gas_temperature
+from pyTNG.cosmology import TNGcosmo
+from gaussian_outflow_selection import (
+    group_gas,
+    select_galaxy_group,
+    get_only_outflowing_gas,
+)
 
 
 class Galaxy:
-    _, sim_path = get_sim()
+    """
+    Represents a galaxy (or subhalo) with methods to load and process
+    various particle types (gas, stars, etc.) and compute derived quantities.
+    """
+
     out_gas_selections = ["GMM", "v_esc_ratio", "v_crit"]
+    _, sim_path = get_sim()
 
     def __init__(
         self,
@@ -45,79 +52,82 @@ class Galaxy:
         fixed_selection=False,
         serra=False,
     ):
+        # Basic configuration
+        self.df = df
+        self.halo_id = halo_id
+        self.snap = snap
+        self.serra = serra
+        self.fixed_selection = fixed_selection
+        self.cut_factor = cut_factor
+        self.group_props = group_props
+        self.v_esc_ratio = v_esc_ratio
+        self.with_rotation = with_rotation
+        self.h = 0.6774  # Hubble parameter (for internal conversion)
 
+        # Placeholders for lazy-loaded properties
         self._halo = None
         self._gal_pos = None
         self._gal_vel = None
         self._stars = None
         self._gas = None
+        self._wind = None
+        self._wind_aperture = None
         self._out_gas = None
         self._out_galaxy = None
         self._cold_out_gas = None
         self._remain_gas = None
         self._ang_mom_dir = None
 
-        self.serra = serra
-        self.df = df
-        self.halo_id = halo_id
-        self.snap = snap
+        # Derived quantities from halo properties
         if not self.serra:
             self.galaxy_id = int(self.halo.idx.iloc[0])
-        self.fixed_selection = fixed_selection
-        
-        # self.scale_radius = float(self.halo.r_SFR)
-
-        self.cut_factor = cut_factor
-        if not self.serra:
             self.r_vir = float(self.halo.R_vir.iloc[0])
-        self.group_props = group_props
-        self.v_esc_ratio = v_esc_ratio
-        if self.serra:
-            self.z = self.halo.z.values[0]
-        else:
-            self.z = get_redshift(self.snap)
-        self.with_rotation = with_rotation
+        self.z = self.halo.z.values[0] if self.serra else get_redshift(self.snap)
         self.critical_velocity = 2 * self.halo.SubhaloVelDisp.values[0]
-        self.critical_out_velocity = 2 * self.halo.SubhaloVelDisp.values[0]
-        self.fixed_radius = 3.5
-        self.h = 0.6774
-        self.aperture_r = cosmo.kpc_proper_per_arcmin(self.z).value * aperture_size/60 
-        # self.critical_velocity = 50
+        self.critical_out_velocity = self.critical_velocity
 
-        # if self.halo.M_star_log.values[0] < 9:
-        #     self.scale_radius = float(self.halo.r_SFR.iloc[0])
-        #     self.n_peak = 3
-        # elif self.halo.M_star_log.values[0] > 9:
-        #     self.scale_radius = float(self.halo.Galaxy_GHMR.iloc[0]) / 10
-        #     self.n_peak = 2
+        # Aperture (physical) radius in kpc
+        self.aperture_r = cosmo.kpc_proper_per_arcmin(self.z).value * aperture_size / 60
 
-        self.n_peak = 3
-
-        if self.halo.M_star_log.values[0] < 9:
-            self.scale_radius = float(self.halo.r_SFR.iloc[0])
-        elif self.halo.M_star_log.values[0] > 9:
-            self.scale_radius = float(self.halo.r_SFR.iloc[0]) * 2
-        
-        if fixed_selection:
-            self.cut_r = 3.5
-
+        # Determine the scale radius and number of peaks based on stellar mass log
+        if self.serra:
+            self.n_peak = 2
         else:
-            if self.serra:
-                self.cut_r = 3
+            if self.halo.M_star_log.values[0] < 10.5:
+                self.n_peak = 3
             else:
-                self.cut_r = self.cut_factor * self.scale_radius
-        if not self.serra:
-            if self.cut_r > self.r_vir:
-                self.cut_r = self.r_vir
+                self.n_peak = 3
+        r_sfr = float(self.halo.r_SFR.iloc[0])
+        if self.halo.M_star_log.values[0] < 9:
+            self.scale_radius = r_sfr
+        else:
+            self.scale_radius = r_sfr * 2
+
+        # Set the cut radius for particle selection
+        self.cut_r = (
+            3.5
+            if fixed_selection
+            else (
+                self.aperture_r * 2
+                if self.serra
+                else self.cut_factor * self.scale_radius
+            )
+        )
+
+        if not self.serra and self.cut_r > self.r_vir:
+            self.cut_r = self.r_vir
+
+        # Validate outflow selection method
         if out_gas_sel in self.out_gas_selections:
             self.out_gas_sel = out_gas_sel
         else:
             raise NotImplementedError(
-                f"Outflow selection based on {out_gas_sel} is not implemented yet"
+                f"Outflow selection '{out_gas_sel}' is not implemented yet"
             )
 
     @property
     def halo(self):
+        """Lazy-load the halo dataframe."""
         if self._halo is None:
             if self.serra:
                 self._halo = self.df[
@@ -131,22 +141,16 @@ class Galaxy:
 
     @property
     def gal_pos(self):
+        """Return the galaxy’s position as a numpy array."""
         if self._gal_pos is None:
+            # For Serra, this might trigger a side-effect
             if self.serra:
                 get_serra_gas(self.snap, self.halo_id)
             else:
-                gas = il.snapshot.loadSubhalo(
+                _ = il.snapshot.loadSubhalo(
                     self.sim_path, self.snap, self.galaxy_id, "gas"
                 )
-            # self._gal_pos = np.average(gas['Coordinates'], weights=gas['Density'], axis=0) 
             self._gal_pos = np.array(
-                [
-                    float(self.halo.Galaxy_pos_x.iloc[0]),
-                    float(self.halo.Galaxy_pos_y.iloc[0]),
-                    float(self.halo.Galaxy_pos_z.iloc[0]),
-                ]
-            )
-            test = np.array(
                 [
                     float(self.halo.Galaxy_pos_x.iloc[0]),
                     float(self.halo.Galaxy_pos_y.iloc[0]),
@@ -157,6 +161,7 @@ class Galaxy:
 
     @property
     def gal_vel(self):
+        """Return the galaxy’s velocity as a numpy array."""
         if self._gal_vel is None:
             self._gal_vel = np.array(
                 [
@@ -169,35 +174,66 @@ class Galaxy:
 
     @property
     def stars(self):
+        """Load and process the star particles."""
         if self._stars is None:
             if self.serra:
                 self._stars = get_serra_stars(self.snap, self.halo_id)
             else:
-                self._stars = il.snapshot.loadSubhalo(
+                stars_and_wind = il.snapshot.loadSubhalo(
                     self.sim_path, self.snap, self.galaxy_id, "stars"
                 )
+                relevant_stars = stars_and_wind["GFM_StellarFormationTime"] > 0
+                self._stars = map_to_new_dict(stars_and_wind, relevant_stars)
+                wind_test = stars_and_wind["GFM_StellarFormationTime"] < 0
+                # self._wind = map_to_new_dict(stars_and_wind, wind_test)
+                # wind_mass = np.sum(self._wind['Masses']*1e10/0.6774)
             self._get_relative_coordinates(self._stars)
             self._get_relative_distances(self._stars)
+            self._stars = self._cut_gal_scale(self._stars)
             self._get_velocities(self._stars)
         return self._stars
+    
+    @property
+    def wind(self):
+        if self._wind is None:
+            stars_and_wind = il.snapshot.loadSubhalo(
+                        self.sim_path, self.snap, self.galaxy_id, "stars"
+                    )
+            wind_ids = stars_and_wind["GFM_StellarFormationTime"] <= 0
+            self._wind = map_to_new_dict(stars_and_wind, wind_ids)
+        return self._wind
+    
+    @property
+    def wind_aperture(self):
+        if self._wind_aperture is None:
+            wind = self.wind
+            self._get_relative_coordinates(wind)
+            self._get_relative_distances(wind)
+            in_aperture = wind["Physical_Relative_Distances"] < self.aperture_r
+            self._wind_aperture = map_to_new_dict(wind, in_aperture)
+        return self._wind_aperture
+    
 
     @property
     def gas(self):
+        """Load and process the gas particles."""
         if self._gas is None:
-            if self.serra:
-                self._gas = get_serra_gas(self.snap, self.halo_id)
-            else:
-                self._gas = il.snapshot.loadHalo(
-                    self.sim_path, self.snap, self.halo_id, "gas"
-                )
+            self._gas = (
+                get_serra_gas(self.snap, self.halo_id)
+                if self.serra
+                else il.snapshot.loadHalo(self.sim_path, self.snap, self.halo_id, "gas")
+            )
             if self.out_gas_sel == "v_esc_ratio":
                 self._get_gas_v_esc(self._gas)
-
-            if not self.serra:
-                self._convert_density(self._gas)
             self._get_relative_coordinates(self._gas)
             self._get_relative_distances(self._gas)
-            self._gas = self._cut_gal_scale(self._gas)
+            if not self.serra:
+                self._convert_density(self._gas)
+            if not self.serra:
+                self._gas = self._cut_gal_scale(self._gas)
+
+            if not self.serra:
+                self._gas = self._cut_gal_scale(self._gas)
             self._set_idces(self._gas)
             self._get_velocities(self._gas)
             self._get_dir(self._gas)
@@ -206,44 +242,37 @@ class Galaxy:
             if not self.serra:
                 gas_temperature.gasTemp(self._gas)
                 self._get_hsml()
-            # if self.with_rotation:
             self._gas = self.rotate_into_galactic_plane(self._gas)
+            self.get_los_projections()
         return self._gas
 
-    # Selects all gas that is moving out: v_out>0
     @property
     def out_gas(self):
+        """Return the subset of gas defined as outflowing."""
         if self._out_gas is None:
             if self.out_gas_sel == "GMM":
                 all_out_gas = self._select_moving_gas(threshold_velocity=0)
                 self._group_gas(all_out_gas)
-                galaxy_groups = self._get_gas_groups(all_out_gas)
+                gas_groups = self._get_gas_groups(all_out_gas)
                 galaxy_group_num, self._out_galaxy = self._select_galaxy_group(
-                    galaxy_groups
+                    gas_groups
                 )
-
                 outflowing_gas = get_only_outflowing_gas(
                     all_out_gas,
                     galaxy_group=galaxy_group_num,
                     crit_vout=self.critical_out_velocity,
                 )
                 out_gas_z = self.get_out_gas_z()
-
                 overlap_indices = np.union1d(
                     outflowing_gas["idces"], out_gas_z["idces"]
                 )
-                result_array = np.full_like(
-                    self.gas["idces"], False, dtype=bool
-                )
-                outflow_idces = np.isin(self.gas["idces"], overlap_indices)
-                result_array[outflow_idces] = True
+                result_array = np.full_like(self.gas["idces"], False, dtype=bool)
+                result_array[np.isin(self.gas["idces"], overlap_indices)] = True
                 self._out_gas = map_to_new_dict(self.gas, result_array)
 
             elif self.out_gas_sel == "v_esc_ratio":
-                self._out_gas = self._select_moving_gas(
-                    v_esc_ratio=self.v_esc_ratio
-                )
-            elif self.out_gas_selections == "v_crit":
+                self._out_gas = self._select_moving_gas(v_esc_ratio=self.v_esc_ratio)
+            elif self.out_gas_sel == "v_crit":
                 self._out_gas = self._select_moving_gas(
                     threshold_velocity=self.v_esc_ratio
                 )
@@ -251,6 +280,7 @@ class Galaxy:
 
     @property
     def cold_out_gas(self):
+        """Return only the cold outflowing gas (10^4 K < T < 10^5 K)."""
         if self._cold_out_gas is None:
             idces_cold = (1e4 < self.out_gas["Temperature"]) & (
                 self.out_gas["Temperature"] < 1e5
@@ -260,229 +290,213 @@ class Galaxy:
 
     @property
     def remain_gas(self):
+        """Return the gas not identified as outflowing."""
         if self._remain_gas is None:
-            overlap_indices = np.setdiff1d(
-                self.gas["idces"], self.out_gas["idces"]
-            )
+            overlap_indices = np.setdiff1d(self.gas["idces"], self.out_gas["idces"])
             result_array = np.full_like(self.gas["idces"], False, dtype=bool)
-            remain_idces = np.isin(self.gas["idces"], overlap_indices)
-            result_array[remain_idces] = True
+            result_array[np.isin(self.gas["idces"], overlap_indices)] = True
             self._remain_gas = map_to_new_dict(self.gas, result_array)
-            if not self.serra:
-                not_inflow = np.array(self._remain_gas['Relative_Distances'])<4*self.halo.r_SFR.values[0]
-                self._remain_gas = map_to_new_dict(self._remain_gas, not_inflow)
+            # if not self.serra:
+            #     not_inflow = (
+            #         np.array(self._remain_gas["Relative_Distances"])
+            #         < 4 * self.halo.r_SFR.values[0]
+            #     )
+            #     self._remain_gas = map_to_new_dict(self._remain_gas, not_inflow)
+            # else:
+            #     not_inflow = (
+            #         np.array(self._remain_gas["Relative_Distances"])
+            #         < 20 * self.halo.r_SFR.values[0]
+            #     )
+            #     self._remain_gas = map_to_new_dict(self._remain_gas, not_inflow)
         return self._remain_gas
-
-    """Selects the part of the central galaxy that is outflowing.
-    I only use it for some tests and it only works for GMM selection
-    otherwise it returns None"""
 
     @property
     def out_galaxy(self):
+        """Return the central outflowing galaxy group (if applicable)."""
         if self._out_galaxy is None:
-            _ = self.out_gas
+            _ = self.out_gas  # Triggers outflow selection
         return self._out_galaxy
 
     @property
     def ang_mom_dir(self):
+        """Compute the angular momentum direction of the galaxy (from stars or gas)."""
         if self._ang_mom_dir is None:
             if self.serra:
-                idces_rel_gas = (
-                    self.gas["Relative_Distances"] < 0.5
-                )
-                rel_gas = map_to_new_dict(self.gas, idces_rel_gas)
-                # sfr_weighted = rel_gas['Coordinates'] * rel_gas['StarFormationRate'][:, np.newaxis]
-                sfr_weighted = rel_gas['Coordinates'] * rel_gas['Masses'][:, np.newaxis]
-                ang_mom = (
-                    np.cross(
-                        sfr_weighted,
-                        rel_gas["Relative_Velocities"],
-                    ).T
-                    * rel_gas["Masses"]#/np.sum(rel_gas['StarFormationRate'])
-                )
+                idces = self.stars["Relative_Distances"] < 2
+                # rel_stars = map_to_new_dict(self.stars, idces)
+                # # mass_weighted = rel_stars["Coordinates"] * rel_stars["Masses"][:, np.newaxis]
+                # test_vel = rel_stars["Relative_Velocities"]-np.mean(rel_stars["Relative_Velocities"], axis=0)
+                # ang_mom = np.cross(
+                #     rel_stars["Coordinates"],
+                #     rel_stars['Relative_Velocities'],
+                # ).T * rel_stars["Masses"]
             else:
-                idces_rel_stars = (
-                    self.stars["Relative_Distances"] < self.scale_radius
-                )
-                rel_stars = map_to_new_dict(self.stars, idces_rel_stars)
-                ang_mom = (
-                    np.cross(
-                        rel_stars["Coordinates"],
-                        rel_stars["Relative_Velocities"],
-                    ).T
-                    * rel_stars["Masses"]
-                )
-            
+                idces = self.stars["Relative_Distances"] < self.scale_radius
+            rel_stars = map_to_new_dict(self.stars, idces)
+            ang_mom = (
+                np.cross(
+                    rel_stars["Coordinates"], rel_stars["Relative_Velocities"]
+                ).T
+                * rel_stars["Masses"]
+            )
             tot_ang_mom = np.sum(ang_mom, axis=1)
             self._ang_mom_dir = tot_ang_mom / np.linalg.norm(tot_ang_mom)
         return self._ang_mom_dir
 
     def _convert_density(self, gas):
-        to_msun_ckpc = (1e10 / 0.6774) / (
-            1 / 0.6774 / (float(self.halo.z.iloc[0]) + 1)
-        ) ** 3
+        """Convert density to electron density in cgs units."""
+        to_msun_ckpc = (1e10 / self.h) / (1 / self.h / (self.halo.z.iloc[0] + 1)) ** 3
         to_cm_3 = to_msun_ckpc * c.M_sun / c.m_p * 0.76 / (u.kpc.to(u.cm)) ** 3
         gas["Density_e"] = gas["Density"] * to_cm_3 * gas["ElectronAbundance"]
-        return
 
     def get_out_gas_z(self):
-        idces_z_gas = (
-            ((self.gas["Relative_Velocities"][:, 2] > self.critical_velocity))
+        """Select gas based on its vertical velocity and coordinate."""
+        idces_z = (
+            (self.gas["Relative_Velocities"][:, 2] > self.critical_velocity)
             & (self.gas["Coordinates"][:, 2] > 0)
         ) | (
-            ((self.gas["Relative_Velocities"][:, 2] < -self.critical_velocity))
+            (self.gas["Relative_Velocities"][:, 2] < -self.critical_velocity)
             & (self.gas["Coordinates"][:, 2] < 0)
         )
-        out_gas_z = map_to_new_dict(self.gas, idces_z_gas)
-        return out_gas_z
+        return map_to_new_dict(self.gas, idces_z)
 
     def _set_idces(self, gas):
+        """Set unique indices for each gas particle."""
         gas["idces"] = np.arange(gas["count"])
-        return
 
     def _select_moving_gas(self, threshold_velocity=None, v_esc_ratio=None):
+        """Select gas particles based on a threshold velocity or escape velocity ratio."""
         if self.gas["count"] == 0:
             return self.gas
+        if threshold_velocity is not None and v_esc_ratio is None:
+            idces = self.gas["Flow_Velocities"] > threshold_velocity
+        elif threshold_velocity is None and v_esc_ratio is not None:
+            idces = (
+                self.gas["Relative_Velocities_abs"] > v_esc_ratio * self.gas["v_esc"]
+            ) & (self.gas["Flow_Velocities"] > 0)
         else:
-            if (threshold_velocity is not None) and (v_esc_ratio is None):
-                idces_rel_gas = (
-                    self.gas["Flow_Velocities"] > threshold_velocity
-                )
-            elif (threshold_velocity is None) and (v_esc_ratio is not None):
-                idces_rel_gas = (
-                    self.gas["Relative_Velocities_abs"]
-                    > v_esc_ratio * self.gas["v_esc"]
-                ) & (self.gas["Flow_Velocities"] > 0)
-            else:
-                raise ValueError(
-                    'Either "v_esc_ratio" or "threshold_velocity" but not both have to be "None"'
-                )
-            moving_gas = map_to_new_dict(self.gas, idces_rel_gas)
-            return moving_gas
+            raise ValueError(
+                'Either "v_esc_ratio" or "threshold_velocity" must be None.'
+            )
+        return map_to_new_dict(self.gas, idces)
 
     def _cut_gal_scale(self, gas):
-        if self.fixed_selection:
-            relevant_gas = gas["Physical_Relative_Distances"] < self.cut_r
+        """Cut gas based on a fixed or variable radial scale."""
+        if self.serra:
+            gas['pre_dist'] = np.sqrt(
+                np.sum(np.square(gas["Coordinates"]), axis=1)
+            ).astype(np.float32)
+            selection = gas['pre_dist'] < self.cut_r
+
         else:
-            relevant_gas = gas["Relative_Distances"] < self.cut_r
-        gas = map_to_new_dict(gas, relevant_gas)
-        return gas
+            if self.fixed_selection:
+                selection = gas["Physical_Relative_Distances"] < self.cut_r
+            else:
+                selection = gas["Relative_Distances"] < self.cut_r
+        return map_to_new_dict(gas, selection)
 
     def _get_relative_coordinates(self, particles):
-        if "Abs_Coordinates" not in particles.keys():
+        """Compute absolute and (if applicable) physical coordinates."""
+        if "Abs_Coordinates" not in particles:
             particles["Abs_Coordinates"] = np.copy(particles["Coordinates"])
             if not self.serra:
-                particles["Coordinates"] = particles["Coordinates"] - self.gal_pos
-                particles["Physical_Coordinates"] = particles["Coordinates"] * 1 / (1 + self.z)/self.h
-            else: 
+                particles["Coordinates"] -= self.gal_pos
+                particles["Physical_Coordinates"] = particles["Coordinates"] / (
+                    (1 + self.z) * self.h
+                )
+            else:
                 particles["Physical_Coordinates"] = particles["Coordinates"]
-        return
 
     def _get_relative_distances(self, particles):
+        """Compute relative and physical distances from the galaxy center."""
         particles["Relative_Distances"] = np.sqrt(
             np.sum(np.square(particles["Coordinates"]), axis=1)
+        ).astype(np.float32)
+        particles["Physical_Relative_Distances"] = np.sqrt(
+            np.sum(np.square(particles["Physical_Coordinates"]), axis=1)
         )
-        particles["Physical_Relative_Distances"] = np.sqrt(np.sum(np.square(particles["Physical_Coordinates"]), axis=1))
         if not self.serra:
-            particles["SFR_dist"] = particles["Relative_Distances"] / 2*float(
-                self.halo.r_SFR.iloc[0]
+            particles["SFR_dist"] = particles["Relative_Distances"] / (
+                2 * float(self.halo.r_SFR.iloc[0])
             )
             particles["SFR_dist"][particles["SFR_dist"] < 1] = 1
-        return
 
     def _get_velocities(self, particles):
+        """Compute velocities relative to the mean velocity."""
         if not self.serra:
-            particles["Velocities"] = particles["Velocities"] * np.sqrt(
-                scale_factor(self.z)
-            )
-        # self._stars = il.snapshot.loadSubhalo(
-        #     self.sim_path, self.snap, self.galaxy_id, "gas"
-        # )
-        # particles["Relative_Velocities"] = (
-        #     particles["Velocities"] - self.gal_vel.T
-        # )
+            particles["Velocities"] *= np.sqrt(scale_factor(self.z))
         if self.serra:
-            relevant_particles = particles["Relative_Distances"] < 1.5
-            particles_galaxy = map_to_new_dict(particles, relevant_particles)
-            mean = np.average(particles_galaxy["Velocities"], weights=particles_galaxy['Masses'], axis=0)
+            # rel_mask = particles["Relative_Distances"] < 20 * self.halo.r_SFR.values[0]
+            rel_mask = particles["Relative_Distances"] < 5
+            particles_subset = map_to_new_dict(particles, rel_mask)
+            mean_vel = np.average(
+                particles_subset["Velocities"],
+                weights=particles_subset["mass"],
+                axis=0,
+            )
         else:
-            mean = np.average(particles["Velocities"], axis=0)
-        particles["Relative_Velocities"] = particles["Velocities"] - mean
-        particles["Relative_Velocities_abs"] = np.float32(
-            np.linalg.norm(particles["Relative_Velocities"], axis=1)
-        )
-        return
+            mean_vel = np.average(particles["Velocities"], axis=0)
+        particles["Relative_Velocities"] = particles["Velocities"] - mean_vel
+        particles["Relative_Velocities_abs"] = np.linalg.norm(
+            particles["Relative_Velocities"], axis=1
+        ).astype(np.float32)
 
     def _get_dir(self, gas):
-        gas["Direction"] = (
-            gas["Coordinates"].T / np.linalg.norm(gas["Coordinates"], axis=1)
-        ).T
-        return
+        """Compute the unit vector in the direction of each gas particle."""
+        norm = np.linalg.norm(gas["Coordinates"], axis=1)[:, np.newaxis]
+        gas["Direction"] = gas["Coordinates"] / norm
 
     def _get_flow(self, gas):
-        # >0 means outflow, <0 means infall
+        """Compute the outflow (or inflow) velocity along the radial direction."""
         gas["Flow_Velocities"] = np.float32(
-            np.multiply(gas["Relative_Velocities"], gas["Direction"]).sum(
-                axis=1
-            )
+            (gas["Relative_Velocities"] * gas["Direction"]).sum(axis=1)
         )
-        return
 
     def _get_rot_vel(self, gas):
-        ang_momementa = np.cross(
-            gas["Coordinates"],
-            gas["Relative_Velocities"],
-        ).T
-        gas["Rot_Velocities"] = np.float32(
-            np.dot(self.ang_mom_dir, ang_momementa)
-        )
+        """Compute rotational velocities using the angular momentum direction."""
+        ang_mom = np.cross(gas["Coordinates"], gas["Relative_Velocities"]).T
+        gas["Rot_Velocities"] = np.float32(np.dot(self.ang_mom_dir, ang_mom))
         gas["Angular_Velocities"] = np.float32(
-            (gas["Rot_Velocities"] / gas["Relative_Distances"])
+            gas["Rot_Velocities"] / gas["Relative_Distances"]
         )
-        return
 
     def _get_hsml(self):
+        """Compute the smoothing length for gas particles."""
         self.gas["hsml"] = 2.5 * (
             3 * (self.gas["Masses"] / self.gas["Density"]) / (4.0 * np.pi)
         ) ** (1.0 / 3)
-        return
 
     def _group_gas(self, gas):
-        group_gas(gas, props=self.group_props, n_peak=self.n_peak)
-        return
+        """Group gas particles using external grouping logic."""
+        group_gas(gas, props=self.group_props, n_peak=self.n_peak, serra=self.serra)
 
     def _get_gas_groups(self, gas):
-        gas_groups = []
-        for i in range(np.max(gas["group"]) + 1):
-            gas_group = self.select_gas_group(gas, i)
-            gas_groups.append(gas_group)
-        return gas_groups
+        """Return a list of gas groups."""
+        n_groups = np.max(gas["group"]) + 1
+        return [self.select_gas_group(gas, i) for i in range(n_groups)]
 
     def _select_galaxy_group(self, gas_groups):
-        galaxy_group_num = select_galaxy_group(gas_groups, serra=self.serra)
-        galaxy_group = gas_groups[galaxy_group_num]
-        slow_gas = (
-            np.array(galaxy_group["Flow_Velocities"]) < self.critical_velocity
-        )
-        galaxy_group = map_to_new_dict(galaxy_group, slow_gas)
-        return galaxy_group_num, galaxy_group
+        """Select the galaxy group based on external criteria."""
+        group_num = select_galaxy_group(gas_groups, serra=self.serra)
+        galaxy_group = gas_groups[group_num]
+        slow_mask = np.array(galaxy_group["Flow_Velocities"]) < self.critical_velocity
+        galaxy_group = map_to_new_dict(galaxy_group, slow_mask)
+        return group_num, galaxy_group
 
     def _build_all_particles_dict(self, halo_particles):
-        tot_num = np.sum(particles["count"] for particles in halo_particles)
-        all_particles = {}
-        all_particles["Masses"] = np.empty(tot_num)
-        all_particles["Relative_Distances"] = np.empty(tot_num)
-        all_particles["Numbering"] = np.empty(tot_num)
-
-        for i, particles in enumerate(halo_particles):
-            if i == 0:
-                start = 0
-            else:
-                start = start + halo_particles[i - 1]["count"]
-            end = particles["count"] + start
+        """Combine particle information from multiple types (gas, DM, stars)."""
+        tot_num = sum(p["count"] for p in halo_particles)
+        all_particles = {
+            "Masses": np.empty(tot_num),
+            "Relative_Distances": np.empty(tot_num),
+            "Numbering": np.empty(tot_num),
+        }
+        start = 0
+        for particles in halo_particles:
+            end = start + particles["count"]
             self._get_relative_coordinates(particles)
             self._get_relative_distances(particles)
-            if "Masses" in particles.keys():
+            if "Masses" in particles:
                 all_particles["Masses"][start:end] = particles["Masses"]
             else:
                 dm_mass = get_dm_mass(self.snap)
@@ -494,19 +508,17 @@ class Galaxy:
             ]
             particles["Numbering"] = np.arange(start, end)
             all_particles["Numbering"][start:end] = particles["Numbering"]
-
+            start = end
         sort_all_keys(particles=all_particles, sort_key="Relative_Distances")
         return all_particles
 
     def _get_gas_v_esc(self, gas):
+        """Compute the escape velocity for each gas particle."""
         dm = il.snapshot.loadHalo(self.sim_path, self.snap, self.halo_id, "dm")
-        stars = il.snapshot.loadHalo(
-            self.sim_path, self.snap, self.halo_id, "stars"
-        )
+        stars = il.snapshot.loadHalo(self.sim_path, self.snap, self.halo_id, "stars")
         halo_particles = [gas, dm, stars]
         all_particles = self._build_all_particles_dict(halo_particles)
         all_particles["Masses_Cum"] = np.cumsum(all_particles["Masses"])
-
         all_particles["Relative_Distances_km"] = get_dist_in_km(
             all_particles["Relative_Distances"], self.z
         )
@@ -527,71 +539,64 @@ class Galaxy:
                 - all_particles["Grav_pot"][-1]
             )
         )
-
         sort_all_keys(particles=all_particles, sort_key="Numbering")
-
-        gas_indices = np.where(
-            np.isin(all_particles["Numbering"], gas["Numbering"])
-        )[0]
-
+        gas_indices = np.where(np.isin(all_particles["Numbering"], gas["Numbering"]))[0]
         gas["v_esc"] = all_particles["v_esc"][gas_indices]
         return gas
 
     def select_gas_group(self, gas, group_num):
+        """Select a gas group given its group number."""
         if gas["count"] == 0:
             return gas
-        else:
-            idces_rel_gas = gas["group"] == group_num
-            rel_gas = map_to_new_dict(gas, idces_rel_gas)
-        return rel_gas
+        idces = gas["group"] == group_num
+        return map_to_new_dict(gas, idces)
 
     def _rot_matrix_from_ang_mom(self):
+        """Return a rotation that aligns the galaxy’s angular momentum with the z-axis."""
         z_axis = np.array([[0, 0, 1]])
-        ang_mom_dir_vec = np.array([self.ang_mom_dir])
-        rotation, _ = R.align_vectors(z_axis, ang_mom_dir_vec)
+        ang_mom_vec = np.array([self.ang_mom_dir])
+        rotation, _ = R.align_vectors(z_axis, ang_mom_vec)
         return rotation
 
     def rotate_into_galactic_plane(self, gas):
-        if self.serra:
-            idces_rel_gas = (
-                    self.gas["Relative_Distances"] < 0.5
-                )
-            rel_gas = map_to_new_dict(self.gas, idces_rel_gas)
-            if rel_gas["count"] >= 5:
-                pca = PCA(3)
-                pca.fit(rel_gas["Coordinates"]*rel_gas["Masses"][:, np.newaxis])
-                rotation_matrix = pca.components_
-                gas["Coordinates"] = gas["Coordinates"].dot(rotation_matrix.T)
-                gas["Relative_Velocities"] = gas["Relative_Velocities"].dot(rotation_matrix.T)
-
-        else:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                rotation = self._rot_matrix_from_ang_mom()
-            gas["Coordinates"] = rotation.apply(gas["Coordinates"])
-            gas["Relative_Velocities"] = rotation.apply(gas["Relative_Velocities"])
+        """Rotate the gas coordinates into the galactic plane."""
+        # if self.serra:
+        #     idces = self.gas["Relative_Distances"] < 0.5
+        #     rel_gas = map_to_new_dict(self.gas, idces)
+        #     if rel_gas["count"] >= 5:
+        #         pca = PCA(n_components=3)
+        #         pca.fit(rel_gas["Coordinates"] * rel_gas["Masses"][:, np.newaxis])
+        #         rotation_matrix = pca.components_
+        #         gas["Coordinates"] = gas["Coordinates"].dot(rotation_matrix.T)
+        #         gas["Relative_Velocities"] = gas["Relative_Velocities"].dot(
+        #             rotation_matrix.T
+        #         )
+        # else:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            rotation = self._rot_matrix_from_ang_mom()
+        gas["Coordinates"] = rotation.apply(gas["Coordinates"])
+        gas["Relative_Velocities"] = rotation.apply(gas["Relative_Velocities"])
+        gas['Direction'] = rotation.apply(gas['Direction'])
         return gas
 
     def get_in_aperture(self, gas):
-        in_aperture = gas["Physical_Relative_Distances"] < self.aperture_r 
-        gas = map_to_new_dict(gas, in_aperture)
-        return gas
+        """Select particles within the defined aperture radius."""
+        in_aperture = gas["Physical_Relative_Distances"] < self.aperture_r
+        return map_to_new_dict(gas, in_aperture)
 
     def get_outflow_mass(self, cold_only=False, in_aperture=False):
-        if cold_only:
-            gas = self.cold_out_gas
-        else:
-            gas = self.out_gas
+        """Return the total outflow mass, optionally limited to cold gas or a specific aperture."""
+        gas = self.cold_out_gas if cold_only else self.out_gas
         if in_aperture:
             gas = self.get_in_aperture(gas)
-        out_mass = np.sum(gas["Masses"])
-        return out_mass
+        return np.sum(gas["Masses"])
 
-    def get_average_outflow_vel(self, weighting="Masses", cold_only=False, in_aperture=False):
-        if cold_only:
-            gas = self.cold_out_gas
-        else:
-            gas = self.out_gas
+    def get_average_outflow_vel(
+        self, weighting="Masses", cold_only=False, in_aperture=False
+    ):
+        """Compute the weighted average outflow velocity."""
+        gas = self.cold_out_gas if cold_only else self.out_gas
         if in_aperture:
             gas = self.get_in_aperture(gas)
         if weighting == "Luminosity":
@@ -601,89 +606,92 @@ class Galaxy:
         else:
             weights = gas[weighting]
         try:
-            vel = np.abs(gas['Flow_Velocities'])
-            v_mean = np.average(vel, weights=weights)
+            vel = np.abs(gas["Flow_Velocities"])
+            return np.average(vel, weights=weights)
         except ZeroDivisionError:
-            v_mean = None
-        return v_mean
+            return None
 
     def _get_quantile_vout(self, gas, weights, quantile):
+        """Return the quantile velocity of the outflow, weighted by the provided weights."""
         if len(gas["Flow_Velocities"]) < 3:
             return None
         vel = np.abs(gas["Flow_Velocities"])
         sorted_indices = np.argsort(vel)
-        sorted_velocities = vel[sorted_indices]
+        sorted_vel = vel[sorted_indices]
         sorted_weights = weights[sorted_indices]
-        weights_summed = np.cumsum(sorted_weights)
-        total_weight = weights_summed[-1]
-        threshold_weight = total_weight * quantile
-        velocity_threshold_index = np.searchsorted(
-            weights_summed, threshold_weight, side="right"
-        )
+        weights_cum = np.cumsum(sorted_weights)
+        total_weight = weights_cum[-1]
+        threshold = total_weight * quantile
+        index = np.searchsorted(weights_cum, threshold, side="right")
         try:
-            v_out = sorted_velocities[velocity_threshold_index]
+            return sorted_vel[index]
         except IndexError:
-            v_out = None
-        return v_out
+            return None
 
-    def get_quantile_velocity(self, quantile, weighting=None, cold_only=False, in_aperture=False):
-        if cold_only:
-            gas = self.cold_out_gas
-        else:
-            gas = self.out_gas
+    def get_quantile_velocity(
+        self, quantile, weighting=None, cold_only=False, in_aperture=False
+    ):
+        """Compute a quantile velocity for the outflow."""
+        gas = self.cold_out_gas if cold_only else self.out_gas
         if in_aperture:
-            gas = self.get_in_aperture(self.out_gas)
+            gas = self.get_in_aperture(gas)
+        if weighting == "Flux":
+            weights = gas["Masses"] * gas["Flow_Velocities"]
+        elif weighting == "Masses":
+            weights = gas["Masses"]
+        elif weighting == "Luminosity":
+            weights = gas["Density"] * gas["Masses"]
+        elif weighting == "Luminosity_O3":
+            weights = gas["Density"] * gas["Masses"] * gas["GFM_Metallicity"]
+        elif weighting is None:
+            weights = np.ones_like(gas["Flow_Velocities"])
+        else:
+            raise NotImplementedError
         try:
-            if weighting == "Flux":
-                weights = gas["Masses"] * gas["Flow_Velocities"]
-            elif weighting == "Masses":
-                weights = gas["Masses"]
-            elif weighting == "Luminosity":
-                weights = gas["Density"] * gas["Masses"]
-            elif weighting == "Luminosity_O3":
-                weights = (
-                    gas["Density"] * gas["Masses"] * gas["GFM_Metallicity"]
-                )
-            elif weighting is None:
-                weights = np.ones_like(gas["Flow_Velocities"])
-            else:
-                raise NotImplementedError
-            v_out = self._get_quantile_vout(gas, weights, quantile)
+            return self._get_quantile_vout(gas, weights, quantile)
         except ZeroDivisionError:
-            v_out = None
-        return v_out
+            return None
 
     def get_flow_rate(self, cold_only=False, in_aperture=False):
+        """Compute the flow rate from the selected outflowing gas."""
         if cold_only:
-            if in_aperture:
-                gas = self.get_in_aperture(self.cold_out_gas)
-            else:
-                gas = self.cold_out_gas
+            gas = (
+                self.get_in_aperture(self.cold_out_gas)
+                if in_aperture
+                else self.cold_out_gas
+            )
         else:
             if in_aperture:
                 gas = self.get_in_aperture(self.out_gas)
+                r = self.aperture_r
             else:
                 gas = self.out_gas
-        m_dot = np.sum(gas["Masses"] * gas["Flow_Velocities"] / self.aperture_r)
-        return m_dot
+                if self.fixed_selection:
+                    r = self.cut_r
+                else:
+                    r = self.cut_r / (self.z + 1) / 0.6774
+        return np.sum(gas["Masses"] * gas["Flow_Velocities"] / r)
 
     def get_outflow_metallicity(self, cold_only=False, type="out", in_aperture=False):
+        """Compute the mass-weighted outflow metallicity for either outflowing or remaining gas."""
         if type == "out":
-            if cold_only:
-                if in_aperture:
-                    gas = self.get_in_aperture(self.cold_out_gas)
-                else:
-                    gas = self.cold_out_gas
-            else:
-                if in_aperture:
-                    gas = self.get_in_aperture(self.out_gas)
-                else:
-                    gas = self.out_gas
-
+            gas = (
+                self.get_in_aperture(self.cold_out_gas)
+                if cold_only
+                else self.get_in_aperture(self.out_gas)
+                if in_aperture
+                else self.out_gas
+            )
         elif type == "remain":
-            if in_aperture:
-                gas = self.get_in_aperture(self.remain_gas)
-            else:
-                gas = self.remain_gas
-        Z = np.average(gas["GFM_Metallicity"], weights=gas["Masses"])
-        return float(Z)
+            gas = (
+                self.get_in_aperture(self.remain_gas)
+                if in_aperture
+                else self.remain_gas
+            )
+        return float(np.average(gas["GFM_Metallicity"], weights=gas["Masses"]))
+
+    def get_los_projections(self):
+        self.gas["v_los_x"] = np.array(self.gas["Relative_Velocities"][:, 0], dtype=np.float32)
+        self.gas["v_los_y"] = np.array(self.gas["Relative_Velocities"][:, 1], dtype=np.float32)
+        self.gas["v_los_z"] = np.array(self.gas["Relative_Velocities"][:, 2], dtype=np.float32)
+        return

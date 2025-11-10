@@ -35,6 +35,7 @@ def normalize(data, key):
         "Rot_Velocities",
         "Angular_Velocities",
         "Abs_Coordinates",
+        # "Relative_Distances",
     ]
     log_data = [
         "Temperature",
@@ -92,12 +93,13 @@ def get_probs(v_out, pdfs, weights):
     )
 
 
-def associate_gas_to_peaks(gas, n_peaks, props):
+def associate_gas_to_peaks(gas, n_peaks, props, serra):
     if props is None:
         props = [
             "Flow_Velocities",
             # "Rot_Velocities",
             "StarFormationRate",
+            # "Relative_Distances",
             "Coordinates",
         ]
     gmm = GMM(
@@ -106,14 +108,29 @@ def associate_gas_to_peaks(gas, n_peaks, props):
         covariance_type="full",
         random_state=42,
     )
+    
     data = get_data(gas, keys=props)
-    gmm.fit(data)
+    if serra:
+        # X is your feature matrix, mass is the array of weights
+        mass = gas["Masses"]
+
+        # Normalize the weights to sum to 1
+        probabilities = mass / np.sum(mass)
+
+        # Choose a new dataset of the same size, sampling with replacement
+        n_samples = len(mass)
+        indices = np.random.choice(np.arange(n_samples), size=n_samples, replace=True, p=probabilities)
+        data_resampled = data[indices]
+    else:
+        data_resampled = data  
+    gmm.fit(data_resampled)
     gas["group"] = gmm.predict(data)
     return
 
 
 def group_gas(
     gas,
+    serra,
     props=["Flow_Velocities"],
     min_number=1,
     max_number=10,
@@ -126,23 +143,40 @@ def group_gas(
         print(f"Selecting {n_peak} peaks. The bic values obtained were {bics}")
     else:
         n_peak = n_peak
-    associate_gas_to_peaks(gas, n_peaks=n_peak, props=props)
+    associate_gas_to_peaks(gas, n_peaks=n_peak, props=props, serra=serra)
     return n_peak
 
 
-def select_galaxy_group(group_array, serra=False):
+def select_galaxy_group(group_array, serra=False, test=False):
     median_dist_min = np.inf
+    median_vel_min = np.inf
     galaxy_group = 0
-
-    for i, group in enumerate(group_array):
-        if serra:
-            median_dist = np.average(group["Relative_Distances"], weights=group['Masses'])
-        else:
-            median_dist = np.median(group["Relative_Distances"])
-        if median_dist < median_dist_min:
-            galaxy_group = i
-            median_dist_min = median_dist
+    if test:
+        for i, group in enumerate(group_array):
+            mean_vel = np.mean(group["Flow_Velocities"])
+            if mean_vel < median_vel_min:
+                galaxy_group = i
+                median_vel_min = mean_vel
+    else:
+        for i, group in enumerate(group_array):
+            if serra:
+                median_dist = np.average(group["Relative_Distances"], weights=group['Masses'])
+            else:
+                median_dist = np.median(group["Relative_Distances"])
+            if median_dist < median_dist_min:
+                galaxy_group = i
+                median_dist_min = median_dist
+    # if serra:
+    #     for i, group in enumerate(group_array):
+    #         median_vel = np.average(group["Relative_Velocities_abs"], weights=group['Masses'])
+    #         if median_vel < median_vel_min:
+    #             galaxy_group_vel = i
+    #             median_vel_min = median_vel
     return galaxy_group
+    # if serra:
+    #     return galaxy_group, galaxy_group_vel
+    # else:
+    #     return galaxy_group
 
 
 def get_only_outflowing_gas(out_gas, galaxy_group, crit_vout):

@@ -77,7 +77,9 @@ class OutflowPropUpdater:
         )
         keys = [
             "M_out_0.6",
-            "M_dot_0.6",
+            # "M_out"
+            # "M_dot_0.6",
+            # "M_dot"
             # "v_lum",
             # "v_mass",
             # "M_out_cold",
@@ -89,7 +91,9 @@ class OutflowPropUpdater:
 
         try:
             out_props["M_out_0.6"] = gal.get_outflow_mass(in_aperture=self.in_aperture)
-            out_props["M_dot_0.6"] = gal.get_flow_rate(in_aperture=self.in_aperture)
+            
+            # out_props["M_dot_0.6"] = gal.get_flow_rate(in_aperture=self.in_aperture)
+            # out_props["M_dot"] = gal.get_flow_rate(in_aperture=False)
             # out_props["v_lum"] = gal.get_average_outflow_vel(weighting="Luminosity", in_aperture=self.in_aperture)
             # out_props["v_mass"] = gal.get_average_outflow_vel(weighting="Masses", in_aperture=self.in_aperture)
             # out_props["M_out_cold"] = gal.get_outflow_mass(cold_only=True)
@@ -123,6 +127,7 @@ class OutflowPropUpdater:
                 snap=snap,
                 group_props=self.group_props,
                 serra=self.serra,
+                aperture_size=self.aperture_size,
             )
         keys = []
         out_vels = {}
@@ -181,10 +186,8 @@ class OutflowPropUpdater:
             return False
 
     def add_outflow_parameters(self):
-        if self.snap_range is not None:
-            iteration_df = self.df
-        else:
-            iteration_df = self.df
+        iteration_df = self.df
+            
         counter = 0
         for _, element in iteration_df.iterrows():
             counter += 1
@@ -390,59 +393,109 @@ class OutflowPropUpdater:
                         f"W80_outflow_{phi}_{theta}",
                     ] = W80_outflow
 
-                    if self.in_aperture:
-                        self.df.loc[
-                            (self.df.snap == snap) & (self.df.Halo_id == halo_id),
-                            f"delta_v_galaxy_{phi}_{theta}_aperture",
-                        ] = delta_v_galaxy_aperture
-
-                        self.df.loc[
-                            (self.df.snap == snap) & (self.df.Halo_id == halo_id),
-                            f"W80_galaxy_{phi}_{theta}_aperture",
-                        ] = W80_galaxy_aperture
-
-                        self.df.loc[
-                            (self.df.snap == snap) & (self.df.Halo_id == halo_id),
-                            f"delta_v_outflow_{phi}_{theta}_aperture",
-                        ] = delta_v_outflow_aperture
-
-                        self.df.loc[
-                            (self.df.snap == snap) & (self.df.Halo_id == halo_id),
-                            f"W80_outflow_{phi}_{theta}_aperture",
-                        ] = W80_outflow_aperture
-
             if counter % 100 == 0:
                 print(f"Processed {counter/len(iteration_df)*100:.2f}% of galaxies")
                 self.save_df()
         return
+
+    def get_wind_mass(self, halo_id, snap):
+        gal = Galaxy(
+            df=self.df,
+            halo_id=halo_id,
+            snap=snap,
+            group_props=self.group_props,
+            serra=self.serra,
+            aperture_size=self.aperture_size,
+        )
+        try:
+            wind_mass = np.sum(gal.wind_aperture['Masses']*1e10/0.6774)
+        except:
+            wind_mass = None
+        return wind_mass
+    
+    def add_wind_masses(self):
+        if self.serra:
+            print("Wind mass not implemented for Serra")
+            return
+        iteration_df = self.df
+
+        wind_col_name = "wind_mass"
+        if wind_col_name not in self.df.keys():
+            self.df[wind_col_name] = np.nan * np.ones(len(self.df))
+            
+        counter = 0
+        for _, element in iteration_df.iterrows(): 
+            counter += 1
+            halo_id = int(element.Halo_id)
+            snap = int(element.snap)
+            wind_mass = self.get_wind_mass(halo_id, snap)
+
+            self.df.loc[
+                        (self.df.snap == snap) & (self.df.Halo_id == halo_id),
+                        wind_col_name,
+                    ] = wind_mass
+            if counter % 100 == 0:
+                print(f"Processed {counter/len(iteration_df)*100:.2f}% of galaxies")
+                self.save_df()
+        return
+
 
     def save_df(self):
         self.df.to_hdf(self.save_path, key="galaxies")
 
 
 if __name__ == "__main__":
+    # updater = OutflowPropUpdater(
+    #     # "in_aperture_06sec",
+    #     "serra_out",
+    #     # "serra_outflows_W80",   
+    #     # "in_aperture_06sec_v_90_W80_newMout_SFR",    
+    #     # "Mout_7kpc_fixed_Mout",
+    #     # "Mout_7kpc_fixed",
+    #     # "updated_with_W80_angles",
+    #     # "updated_with_M_out",
+    #     # save_name="test",
+    #     # save_name="updated_with_W80_angles",
+    #     save_name="serra_out_m",
+    #     # save_name="serra_outflows_W80",
+    #     # snap_range=[13, 26],
+    #     snap_range=[39, 100],
+    #     with_quantile=False,
+    #     only_shell=False,
+    #     in_aperture=True,
+    #     aperture_size=0.6,
+    #     serra=True,
+    # )
+    # updater.add_outflow_parameters()
+
+    # updater.add_outflow_metallicity()
     updater = OutflowPropUpdater(
         # "in_aperture_06sec",
-        # "serra_base",
-        "serra_outflows_W80",       
+        # "serra_out_v",
+        "in_aperture_final",
+        # "serra_outflows_W80",   
+        # "in_aperture_06sec_v_90_W80_newMout_SFR",    
         # "Mout_7kpc_fixed_Mout",
         # "Mout_7kpc_fixed",
         # "updated_with_W80_angles",
         # "updated_with_M_out",
         # save_name="test",
         # save_name="updated_with_W80_angles",
-        save_name="serra_outflows_W80_Z",
+        # save_name="serra_out_W80",
+        # save_name = "wind_test",
+        save_name="in_aperture_wind",
         # save_name="serra_outflows_W80",
-        # snap_range=[13, 26],
-        snap_range=[39, 100],
+        # snap_range=[13, 14],
+        snap_range=[13, 26],
+        # snap_range=[39, 100],
         with_quantile=False,
         only_shell=False,
         in_aperture=True,
         aperture_size=0.6,
-        serra=True,
+        serra=False,
     )
     # updater.add_outflow_parameters()
     # updater.add_outflow_W80()
-    updater.add_outflow_metallicity()
+    updater.add_wind_masses()
 
     updater.save_df()

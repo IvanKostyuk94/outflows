@@ -1,5 +1,6 @@
 import numpy as np
-from Grid_halo import grid_gas, get_halo
+
+# from Grid_halo import grid_gas, get_halo
 from plotting import plot_prop_maps
 from config import config
 from find_progenitors import get_progenitor_history

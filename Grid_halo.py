@@ -47,7 +47,7 @@ class GasGridder(GalaxyProjections):
         
         # For fixed box size
         if self.serra:
-            self.box_size = 3.5  * 2 * np.ones(3)
+            self.box_size = 4.5  * 2 * np.ones(3)
         self.shape = 2*(grid_size * np.ones(3)).astype(np.int64)
         self.grid_cen = np.array([0, 0, 0])
 
@@ -182,7 +182,12 @@ class GasGridder(GalaxyProjections):
         cell_size = self.get_pixel_length_abs()
         tot_mass_ax = masses.sum(axis=dir) * 1e10 / TNGcosmo.h
         surface_dens = np.log10(tot_mass_ax / cell_size**2 + 1e-9)
-        image[surface_dens < 6.5] = 0
+        if self.serra:
+            tot_mass_ax = masses.sum(axis=dir)
+        else:
+            tot_mass_ax = masses.sum(axis=dir) * 1e10 / TNGcosmo.h
+        surface_dens = np.log10(tot_mass_ax / cell_size**2 + 1e-9)
+        image[surface_dens < 6.0] = 0
         log_props = {"GFM_Metallicity", "Temperature"}
         if prop in log_props:
             image = np.log10(image + 1e-20)
@@ -203,6 +208,10 @@ class GasGridder(GalaxyProjections):
             "los_Velocities",
             "Relative_Velocities_abs",
             "v_z",
+            "v_los_x",
+            "v_los_y",
+            "v_los_z",
+            "Relative_Distances",
         }
         if prop in mass_weighted_props:
             image = self._get_mass_weighted_image(number, dir, prop)

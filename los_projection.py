@@ -19,10 +19,10 @@ class GalaxyProjections(Galaxy):
         halo_id,
         snap,
         projection_angle_theta,
+        aperture_size = 0.6,
         projection_angle_phi=0,
         group_props=None,
         out_gas_sel="GMM",
-        aperture_size=0.3,
         serra=False,
     ):
         super().__init__(
@@ -56,21 +56,23 @@ class GalaxyProjections(Galaxy):
             )
         return self._view_dir
 
-    def line_of_sight_projection(self):
-        z_axis = np.array([[0, 0, 1]])
-        rotation, _ = R.align_vectors(z_axis, np.array([self.view_dir]))
-        self.gas["Coordinates"] = rotation.apply(self.gas["Coordinates"])
-        self.gas["Relative_Velocities"] = rotation.apply(
-            self.gas["Relative_Velocities"]
-        )
+    # Depricated as the gas is already alligned with the z-axis
+    # def line_of_sight_projection(self):
+    #     z_axis = np.array([[0, 0, 1]])
+    #     rotation, _ = R.align_vectors(z_axis, np.array([self.view_dir]))
+    #     self.gas["Coordinates"] = rotation.apply(self.gas["Coordinates"])
+    #     self.gas["Relative_Velocities"] = rotation.apply(
+    #         self.gas["Relative_Velocities"]
+    #     )
 
-        self.out_gas["Coordinates"] = rotation.apply(
-            self.out_gas["Coordinates"]
-        )
-        self.out_gas["Relative_Velocities"] = rotation.apply(
-            self.out_gas["Relative_Velocities"]
-        )
-        return
+    #     self.out_gas["Coordinates"] = rotation.apply(
+    #         self.out_gas["Coordinates"]
+    #     )
+
+    #     self.out_gas["Relative_Velocities"] = rotation.apply(
+    #         self.out_gas["Relative_Velocities"]
+    #     )
+    #     return
 
     def project_outflows(self):
         self.out_gas["los_Velocities"] = np.float32(

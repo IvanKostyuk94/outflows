@@ -199,7 +199,9 @@ def get_serra_galaxy(snap, galaxy_id):
     base_path = config['base_path']
     snapdir = 'snap'+str(snap)
     galaxyname = str(galaxy_id) + '.pickle'
-    galaxy_path = os.path.join(base_path, 'data_new', snapdir, galaxyname)
+    galaxy_dir_name = "main/gas"
+
+    galaxy_path = os.path.join(base_path,  galaxy_dir_name, snapdir, galaxyname)
     with open(galaxy_path, 'rb') as f:
         galaxy = pickle.load(f)
     return galaxy
@@ -208,7 +210,8 @@ def get_serra_galaxy_stars(snap, galaxy_id):
     base_path = config['base_path']
     snapdir = 'snap'+str(snap)
     galaxyname = str(galaxy_id) + '.pickle'
-    galaxy_path = os.path.join(base_path, 'star_data', snapdir, galaxyname)
+    star_dir_name = "main/star"
+    galaxy_path = os.path.join(base_path, star_dir_name, snapdir, galaxyname)
     with open(galaxy_path, 'rb') as f:
         galaxy = pickle.load(f)
     return galaxy
@@ -217,7 +220,7 @@ def get_serra_galaxy_stars(snap, galaxy_id):
 def get_serra_gas(snap, galaxy_id):
     galaxy = get_serra_galaxy(snap, galaxy_id)
     mu = get_mu(galaxy)
-    # galaxy['Density'] = galaxy['rho']* c.M_sun / c.m_p  / mu / (u.kpc.to(u.cm)) ** 3
+    galaxy['Density'] = galaxy['rho']* c.M_sun / c.m_p  / mu / (u.kpc.to(u.cm)) ** 3
     galaxy['Density'] = galaxy['rho']
     galaxy['Coordinates'] = galaxy['pos']
     galaxy['Temperture'] = galaxy['temp']
