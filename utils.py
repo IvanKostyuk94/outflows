@@ -182,37 +182,43 @@ def calculate_acc(mass, dist_km):
     g = -1 * G_correct * get_mass_in_kg(mass) / dist_km**2
     return g
 
+
 def get_mu(galaxy):
-    H = galaxy['H']+galaxy['H+']
-    H2 = galaxy['H2']+galaxy['H2+']
-    He = galaxy['HE']+galaxy['HE+']+galaxy['HE++']
-    mu = H+2*H2+4*He
-    return mu 
+    H = galaxy["H"] + galaxy["H+"]
+    H2 = galaxy["H2"] + galaxy["H2+"]
+    He = galaxy["HE"] + galaxy["HE+"] + galaxy["HE++"]
+    mu = H + 2 * H2 + 4 * He
+    return mu
+
 
 def get_serra_sfr(galaxy):
-    t_ff = np.sqrt(3*np.pi/(32*G*galaxy['rho']*u.Msun/u.kpc**3))
+    t_ff = np.sqrt(3 * np.pi / (32 * G * galaxy["rho"] * u.Msun / u.kpc**3))
     mu = get_mu(galaxy)
-    SFR = (0.1*galaxy['mass']*u.M_sun*galaxy['H2']*mu/t_ff).to('Msun/yr')
+    SFR = (0.1 * galaxy["mass"] * u.M_sun * galaxy["H2"] * mu / t_ff).to(
+        "Msun/yr"
+    )
     return SFR.value
 
+
 def get_serra_galaxy(snap, galaxy_id):
-    base_path = config['base_path']
-    snapdir = 'snap'+str(snap)
-    galaxyname = str(galaxy_id) + '.pickle'
+    base_path = config["base_path"]
+    snapdir = "snap" + str(snap)
+    galaxyname = str(galaxy_id) + ".pickle"
     galaxy_dir_name = "main/gas"
 
-    galaxy_path = os.path.join(base_path,  galaxy_dir_name, snapdir, galaxyname)
-    with open(galaxy_path, 'rb') as f:
+    galaxy_path = os.path.join(base_path, galaxy_dir_name, snapdir, galaxyname)
+    with open(galaxy_path, "rb") as f:
         galaxy = pickle.load(f)
     return galaxy
 
+
 def get_serra_galaxy_stars(snap, galaxy_id):
-    base_path = config['base_path']
-    snapdir = 'snap'+str(snap)
-    galaxyname = str(galaxy_id) + '.pickle'
+    base_path = config["base_path"]
+    snapdir = "snap" + str(snap)
+    galaxyname = str(galaxy_id) + ".pickle"
     star_dir_name = "main/star"
     galaxy_path = os.path.join(base_path, star_dir_name, snapdir, galaxyname)
-    with open(galaxy_path, 'rb') as f:
+    with open(galaxy_path, "rb") as f:
         galaxy = pickle.load(f)
     return galaxy
 
@@ -220,35 +226,39 @@ def get_serra_galaxy_stars(snap, galaxy_id):
 def get_serra_gas(snap, galaxy_id):
     galaxy = get_serra_galaxy(snap, galaxy_id)
     mu = get_mu(galaxy)
-    galaxy['Density'] = galaxy['rho']* c.M_sun / c.m_p  / mu / (u.kpc.to(u.cm)) ** 3
-    galaxy['Density'] = galaxy['rho']
-    galaxy['Coordinates'] = galaxy['pos']
-    galaxy['Temperture'] = galaxy['temp']
-    galaxy['count'] = len(galaxy['mass'])
-    galaxy['Velocities'] = galaxy['vel']
-    galaxy['hsml']  = 2*galaxy['smooth']#*(3/4/np.pi)**(1/3)
-    galaxy['Masses'] = galaxy['mass']
-    galaxy['StarFormationRate'] = get_serra_sfr(galaxy)
+    galaxy["Density"] = (
+        galaxy["rho"] * c.M_sun / c.m_p / mu / (u.kpc.to(u.cm)) ** 3
+    )
+    galaxy["Density"] = galaxy["rho"]
+    galaxy["Coordinates"] = galaxy["pos"]
+    galaxy["Temperture"] = galaxy["temp"]
+    galaxy["count"] = len(galaxy["mass"])
+    galaxy["Velocities"] = galaxy["vel"]
+    galaxy["hsml"] = 2 * galaxy["smooth"]  # *(3/4/np.pi)**(1/3)
+    galaxy["Masses"] = galaxy["mass"]
+    galaxy["StarFormationRate"] = get_serra_sfr(galaxy)
     galaxy["GFM_Metallicity"] = galaxy["metal"]
-    del galaxy['star_mass']
-    del galaxy['z']
+    # del galaxy["star_mass"]
+    del galaxy["z"]
     return galaxy
+
 
 def get_serra_stars(snap, galaxy_id):
     galaxy = get_serra_galaxy_stars(snap, galaxy_id)
-    galaxy['Coordinates'] = galaxy['pos']
-    galaxy['count'] = len(galaxy['mass'])
-    galaxy['Velocities'] = galaxy['vel']
-    galaxy['Masses'] = galaxy['mass']
-    del galaxy['star_mass']
-    del galaxy['z']
+    galaxy["Coordinates"] = galaxy["pos"]
+    galaxy["count"] = len(galaxy["mass"])
+    galaxy["Velocities"] = galaxy["vel"]
+    galaxy["Masses"] = galaxy["mass"]
+    # del galaxy["star_mass"]
+    del galaxy["z"]
     return galaxy
+
 
 def weighted_avg_and_std(values, weights, average):
     """
     Return the weighted average and standard deviation.
 
-    They weights are in effect first normalized so that they 
+    They weights are in effect first normalized so that they
     sum to 1 (and so they must not all be 0).
 
     values, weights -- NumPy ndarrays with the same shape.
@@ -256,74 +266,85 @@ def weighted_avg_and_std(values, weights, average):
     velocities = np.linalg.norm(values, axis=1)
     average_vel = np.linalg.norm(average)
 
-    variance = np.average((velocities-average_vel)**2, weights=weights)
+    variance = np.average((velocities - average_vel) ** 2, weights=weights)
     return np.sqrt(variance)
 
-def get_galaxy_pos_vel(particles):
-    keys_to_include = {'pos', 'vel', 'mass'}
 
-# Dictionary comprehension to create the subset
-    rel_particles = {key: particles[key] for key in keys_to_include if key in particles}
-    rel_particles['rel_pos'] = np.linalg.norm(rel_particles['pos'], axis=1)
-    
-    rel_idx = rel_particles['rel_pos']<2.5
+def get_galaxy_pos_vel(particles):
+    keys_to_include = {"pos", "vel", "mass"}
+
+    # Dictionary comprehension to create the subset
+    rel_particles = {
+        key: particles[key] for key in keys_to_include if key in particles
+    }
+    rel_particles["rel_pos"] = np.linalg.norm(rel_particles["pos"], axis=1)
+
+    rel_idx = rel_particles["rel_pos"] < 2.5
     rel_particles = map_to_new_dict(rel_particles, rel_idx)
-    pos = np.average(rel_particles['pos'], axis=0, weights=rel_particles['mass'])
-    vel = np.average(rel_particles['vel'], axis=0, weights=rel_particles['mass'])
-    disp  = weighted_avg_and_std(rel_particles['vel'], rel_particles['mass'], vel)
+    pos = np.average(
+        rel_particles["pos"], axis=0, weights=rel_particles["mass"]
+    )
+    vel = np.average(
+        rel_particles["vel"], axis=0, weights=rel_particles["mass"]
+    )
+    disp = weighted_avg_and_std(
+        rel_particles["vel"], rel_particles["mass"], vel
+    )
     return pos, vel, disp
 
-def build_serra_df(name='serra_base'):
+
+def build_serra_df(name="serra_base"):
     serra_path = "/ptmp/mpa/ivkos/outflows/data_new"
     serra_files = os.listdir(serra_path)
-    df_path = os.path.join(config['base_path'], name + config['hdf_ending'])
-    data_dict = {}  
-    data_dict['snap'] = []
-    data_dict['z'] = []
-    data_dict['Galaxy_M_star'] = []
-    data_dict['idx'] = []
-    data_dict['Galaxy_pos_x'] = []
-    data_dict['Galaxy_pos_y'] = []
-    data_dict['Galaxy_pos_z'] = []
-    data_dict['Galaxy_vel_x'] = []
-    data_dict['Galaxy_vel_y'] = []
-    data_dict['Galaxy_vel_z'] = []
-    data_dict['SubhaloVelDisp'] = []
-    
+    df_path = os.path.join(config["base_path"], name + config["hdf_ending"])
+    data_dict = {}
+    data_dict["snap"] = []
+    data_dict["z"] = []
+    data_dict["Galaxy_M_star"] = []
+    data_dict["idx"] = []
+    data_dict["Galaxy_pos_x"] = []
+    data_dict["Galaxy_pos_y"] = []
+    data_dict["Galaxy_pos_z"] = []
+    data_dict["Galaxy_vel_x"] = []
+    data_dict["Galaxy_vel_y"] = []
+    data_dict["Galaxy_vel_z"] = []
+    data_dict["SubhaloVelDisp"] = []
+
     for snapdir in serra_files:
         snap = int(snapdir[-2:])
         print(snap)
         galaxies = os.listdir(os.path.join(serra_path, snapdir))
         for galaxy_id in galaxies:
             file_path = os.path.join(serra_path, snapdir, galaxy_id)
-            with open(file_path, 'rb') as f:
+            with open(file_path, "rb") as f:
                 galaxy = pickle.load(f)
             pos, vel, disp = get_galaxy_pos_vel(galaxy)
-            data_dict['snap'].append(snap)
+            data_dict["snap"].append(snap)
             # todo:
-            data_dict['z'].append(galaxy['z'])
+            data_dict["z"].append(galaxy["z"])
             try:
-                data_dict['Galaxy_M_star'].append(galaxy['star_mass'])
+                data_dict["Galaxy_M_star"].append(galaxy["star_mass"])
             except:
                 print(snap)
                 print(galaxy_id)
                 continue
             # data_dict['Galaxy_M_gas'].append(galaxy['M_gas'])
-            idx = int(galaxy_id.split('.')[0])
-            data_dict['idx'].append(idx)
-            data_dict['Galaxy_pos_x'].append(pos[0])
-            data_dict['Galaxy_pos_y'].append(pos[1])
-            data_dict['Galaxy_pos_z'].append(pos[2])
-            data_dict['Galaxy_vel_x'].append(vel[0])
-            data_dict['Galaxy_vel_y'].append(vel[1])
-            data_dict['Galaxy_vel_z'].append(vel[2])
-            data_dict['SubhaloVelDisp'].append(disp)
+            idx = int(galaxy_id.split(".")[0])
+            data_dict["idx"].append(idx)
+            data_dict["Galaxy_pos_x"].append(pos[0])
+            data_dict["Galaxy_pos_y"].append(pos[1])
+            data_dict["Galaxy_pos_z"].append(pos[2])
+            data_dict["Galaxy_vel_x"].append(vel[0])
+            data_dict["Galaxy_vel_y"].append(vel[1])
+            data_dict["Galaxy_vel_z"].append(vel[2])
+            data_dict["SubhaloVelDisp"].append(disp)
     for key in data_dict.keys():
         data_dict[key] = np.array(data_dict[key])
     df = pd.DataFrame(data_dict)
-    df['M_star_log'] = np.log10(df['Galaxy_M_star'])
+    df["M_star_log"] = np.log10(df["Galaxy_M_star"])
     df.to_hdf(df_path, key=config["hdf_key"])
     return
+
 
 def create_particle_box(gas, df, idx, z, stars=None):
     if gas["count"] < 5:
@@ -338,4 +359,3 @@ def create_particle_box(gas, df, idx, z, stars=None):
 
 if __name__ == "__main__":
     build_serra_df()
-    
