@@ -1,12 +1,14 @@
 import h5py
 import numpy as np
 from matplotlib import pyplot as plt
+from matplotlib.colors import ListedColormap
 from utils import map_to_new_dict
 from gaussian_outflow_selection import (
     select_galaxy_group,
     group_gas,
     get_only_outflowing_gas,
 )
+from plotting import label_colors
 
 
 def load_test_gal():
@@ -70,7 +72,9 @@ def identify_galaxy_group(gas_groups, test=True):
 
 def get_out_gas(galaxy):
     norm = np.linalg.norm(galaxy["Coordinates"], axis=1)[:, np.newaxis]
-    galaxy["Relative_Distances"] = np.linalg.norm(galaxy["Coordinates"], axis=1)
+    galaxy["Relative_Distances"] = np.linalg.norm(
+        galaxy["Coordinates"], axis=1
+    )
     galaxy["Direction"] = galaxy["Coordinates"] / norm
     galaxy["Flow_Velocities"] = np.float32(
         (galaxy["Velocities"] * galaxy["Direction"]).sum(axis=1)
@@ -87,11 +91,13 @@ def get_out_gas(galaxy):
     out_gas = outflowing_gas
     return out_gas
 
+
 def identify_out_gas():
     galaxy_np = load_test_gal()
     galaxy = create_galaxy_dict(galaxy_np)
     out_gas = get_out_gas(galaxy)
     return out_gas
+
 
 def compare_out_selection():
     out_gas_gmm = identify_out_gas()
@@ -106,11 +112,17 @@ def compare_out_selection():
     number_extra = len(extra_idces)
     print(f"Number of missing outflowing gas particles: {number_missing}")
     print(f"Number of extra outflowing gas particles: {number_extra}")
-    print(f"Fraction of missing particles: {number_missing / len(out_idces_true):.4f}")
-    print(f'Fraction of extra particles: {number_extra / len(out_idces_true):.4f}')
+    print(
+        f"Fraction of missing particles: {number_missing / len(out_idces_true):.4f}"
+    )
+    print(
+        f"Fraction of extra particles: {number_extra / len(out_idces_true):.4f}"
+    )
     return
 
-def plot_outflow_comparison_test():
+
+def plot_outflow_comparison_test(for_slides=False):
+    label_colors(for_slides)
     out_gas = identify_out_gas()
     galaxy = create_galaxy_extended_dict(load_test_gal())
     fig, axes = plt.subplots(3, 1, sharex=True, figsize=(7, 13))
@@ -120,49 +132,87 @@ def plot_outflow_comparison_test():
     plt.subplots_adjust(hspace=0)
 
     # Get y limits across all panels and expand a bit
-    all_y = np.concatenate([
-        galaxy['Coordinates'][:, 2],
-        out_gas['Coordinates'][:, 2],
-        galaxy['Out_Coordinates'][:, 2]
-    ])
+    all_y = np.concatenate(
+        [
+            galaxy["Coordinates"][:, 2],
+            out_gas["Coordinates"][:, 2],
+            galaxy["Out_Coordinates"][:, 2],
+        ]
+    )
     ymin, ymax = np.min(all_y), np.max(all_y)
     yrange = ymax - ymin
     ymin -= 0.1 * yrange
     ymax += 0.1 * yrange
 
+    if for_slides:
+        cmap = ListedColormap(["#00FFFF", "#FFA500"])
+    else:
+        cmap = plt.get_cmap("coolwarm")
+
     # 1) Full galaxy
-    ax0.scatter(galaxy['Coordinates'][:, 1], galaxy['Coordinates'][:, 2],
-                s=0.1, c=galaxy['out_id'], cmap='coolwarm')
-    ax0.text(0.98, 0.65, 'full galaxy', transform=ax0.transAxes,
-            ha='right', va='top', fontsize=16)
-    ax0.set_ylabel('z', fontsize=20)
+    ax0.scatter(
+        galaxy["Coordinates"][:, 1],
+        galaxy["Coordinates"][:, 2],
+        s=0.1,
+        c=galaxy["out_id"],
+        cmap=cmap,
+    )
+    ax0.text(
+        0.98,
+        0.65,
+        "full galaxy",
+        transform=ax0.transAxes,
+        ha="right",
+        va="top",
+        fontsize=16,
+    )
+    ax0.set_ylabel("z", fontsize=20)
     ax0.set_ylim(ymin, ymax)
-    ax0.tick_params(axis='both', length=5, labelsize=15)
-    ax0.tick_params(axis='x', labelbottom=False)
+    ax0.tick_params(axis="both", length=5, labelsize=15)
+    ax0.tick_params(axis="x", labelbottom=False)
 
     # 2) Identified outflows
-    ax1.scatter(out_gas['Coordinates'][:, 1], out_gas['Coordinates'][:, 2],
-                s=0.1, c=out_gas['out_id'], cmap='coolwarm')
-    ax1.text(0.98, 0.65, 'identified outflows', transform=ax1.transAxes,
-            ha='right', va='top', fontsize=16)
-    ax1.set_ylabel('z', fontsize=20)
+    ax1.scatter(
+        out_gas["Coordinates"][:, 1],
+        out_gas["Coordinates"][:, 2],
+        s=0.1,
+        c=out_gas["out_id"],
+        cmap=cmap,
+    )
+    ax1.text(
+        0.98,
+        0.65,
+        "identified outflows",
+        transform=ax1.transAxes,
+        ha="right",
+        va="top",
+        fontsize=16,
+    )
+    ax1.set_ylabel("z", fontsize=20)
     ax1.set_ylim(ymin, ymax)
-    ax1.tick_params(axis='both', length=5, labelsize=15)
-    ax1.tick_params(axis='x', labelbottom=False)
+    ax1.tick_params(axis="both", length=5, labelsize=15)
+    ax1.tick_params(axis="x", labelbottom=False)
 
     # 3) Actual outflows
-    cmap = plt.get_cmap('coolwarm')
     red_match = cmap(1.0)
-    ax2.scatter(galaxy['Out_Coordinates'][:, 1], galaxy['Out_Coordinates'][:, 2],
-                s=0.1, c=red_match)
-    ax2.text(0.98, 0.65, 'actual outflows', transform=ax2.transAxes,
-            ha='right', va='top', fontsize=16)
-    ax2.set_xlabel('x', fontsize=20)
-    ax2.set_ylabel('z', fontsize=20)
+    ax2.scatter(
+        galaxy["Out_Coordinates"][:, 1],
+        galaxy["Out_Coordinates"][:, 2],
+        s=0.1,
+        c=red_match,
+    )
+    ax2.text(
+        0.98,
+        0.65,
+        "actual outflows",
+        transform=ax2.transAxes,
+        ha="right",
+        va="top",
+        fontsize=16,
+    )
+    ax2.set_xlabel("x", fontsize=20)
+    ax2.set_ylabel("z", fontsize=20)
     ax2.set_ylim(ymin, ymax)
-    ax2.tick_params(axis='both', length=5, labelsize=15)
+    ax2.tick_params(axis="both", length=5, labelsize=15)
+    plt.savefig("test.png")
     return
-
-
-
-
