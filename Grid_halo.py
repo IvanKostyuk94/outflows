@@ -35,20 +35,15 @@ class GasGridder(GalaxyProjections):
         self._grids = None
 
         self.n_threads = n_threads
-
         if self.fixed_selection:
-            self.box_size = (
-                0.7 * self.cut_r * (1+self.z) * 2 * np.ones(3)
-            )
+            self.box_size = 0.7 * self.cut_r * (1 + self.z) * 2 * np.ones(3)
         else:
-            self.box_size = (
-                0.7 * self.cut_r *  2 * np.ones(3)
-            )
-        
+            self.box_size = 0.7 * self.cut_r * 2 * np.ones(3)
+
         # For fixed box size
-        if self.serra:
-            self.box_size = 4.5  * 2 * np.ones(3)
-        self.shape = 2*(grid_size * np.ones(3)).astype(np.int64)
+        # if self.serra:
+        #     self.box_size = 4.5 * 2 * np.ones(3)
+        self.shape = 2 * (grid_size * np.ones(3)).astype(np.int64)
         self.grid_cen = np.array([0, 0, 0])
 
         if projection_angle_theta is not None:
