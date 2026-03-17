@@ -12,6 +12,7 @@ class GasGridder(GalaxyProjections):
         df,
         halo_id,
         snap,
+        backend,
         group_props=None,
         out_gas_sel="GMM",
         quants=None,
@@ -19,7 +20,6 @@ class GasGridder(GalaxyProjections):
         n_threads=8,
         projection_angle_theta=None,
         projection_angle_phi=0,
-        serra=False,
     ):
         super().__init__(
             df,
@@ -29,7 +29,7 @@ class GasGridder(GalaxyProjections):
             out_gas_sel=out_gas_sel,
             projection_angle_theta=projection_angle_theta,
             projection_angle_phi=projection_angle_phi,
-            serra=serra,
+            backend=backend,
         )
         self._quants = quants
         self._grids = None
@@ -40,9 +40,6 @@ class GasGridder(GalaxyProjections):
         else:
             self.box_size = 0.7 * self.cut_r * 2 * np.ones(3)
 
-        # For fixed box size
-        # if self.serra:
-        #     self.box_size = 4.5 * 2 * np.ones(3)
         self.shape = 2 * (grid_size * np.ones(3)).astype(np.int64)
         self.grid_cen = np.array([0, 0, 0])
 
@@ -143,19 +140,19 @@ class GasGridder(GalaxyProjections):
     def get_pixel_length_abs(self):
         a = scale_factor(self.z)
         pixel_length_com = self.box_size[0] / self.shape[0]
-        if self.serra:
-            pixel_length_abs = pixel_length_com
-        else:
+        if self.backend.needs_coordinate_offset():
             pixel_length_abs = pixel_length_com / TNGcosmo.h * a
+        else:
+            pixel_length_abs = pixel_length_com
         return pixel_length_abs
 
     def _get_surface_densities(self, number, dir):
         gas = self.grids[number]["Masses"]
         cell_size = self.get_pixel_length_abs()
-        if self.serra:
-            tot_mass_ax = gas.sum(axis=dir)
-        else:
+        if self.backend.needs_coordinate_offset():
             tot_mass_ax = gas.sum(axis=dir) * 1e10 / TNGcosmo.h
+        else:
+            tot_mass_ax = gas.sum(axis=dir)
         surface_dens = np.log10(tot_mass_ax / cell_size**2 + 1e-9)
         return surface_dens
 
@@ -177,10 +174,10 @@ class GasGridder(GalaxyProjections):
         cell_size = self.get_pixel_length_abs()
         tot_mass_ax = masses.sum(axis=dir) * 1e10 / TNGcosmo.h
         surface_dens = np.log10(tot_mass_ax / cell_size**2 + 1e-9)
-        if self.serra:
-            tot_mass_ax = masses.sum(axis=dir)
-        else:
+        if self.backend.needs_coordinate_offset():
             tot_mass_ax = masses.sum(axis=dir) * 1e10 / TNGcosmo.h
+        else:
+            tot_mass_ax = masses.sum(axis=dir)
         surface_dens = np.log10(tot_mass_ax / cell_size**2 + 1e-9)
         image[surface_dens < 6.0] = 0
         log_props = {"GFM_Metallicity", "Temperature"}

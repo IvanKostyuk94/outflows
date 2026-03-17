@@ -5,8 +5,8 @@ import numpy as np
 
 
 class GalaxyShells(Galaxy):
-    def __init__(self, df, halo_id, snap, radius, thickness=5.0):
-        super().__init__(df, halo_id, snap)
+    def __init__(self, df, halo_id, snap, radius, backend, thickness=5.0, aperture_size=0.6):
+        super().__init__(df, halo_id, snap, aperture_size=aperture_size, backend=backend)
         self.radius = radius
         self.thickness = thickness
 

@@ -1,22 +1,17 @@
-# The base path where the dataframes will be stored
+# Outflows configuration
+# Paths can also be set via environment variables:
+#   OUTFLOWS_BASE_PATH, TNG_DATAPATH, OUTFLOWS_SIM_NAME
 
-base_path : "/ptmp/mpa/ivkos/outflows"
-tng_datapath: "/virgotng/universe/IllustrisTNG/"
-sim_name: "L35n2160TNG"
+# Base path where output dataframes are stored
+# base_path: "/path/to/output"
 
-# sim_name: "L75n1820TNG"
-merger_history_path : "/virgotng/universe/IllustrisTNG/L35n2160TNG/postprocessing/trees/SubLink_gal/tree_extended.hdf5"
-sfr_hist_path : "/virgotng/universe/IllustrisTNG/L35n2160TNG/postprocessing/StarFormationRates"
+# TNG simulation data location
+# tng_datapath: "/path/to/IllustrisTNG/"
+# sim_name: "L35n2160TNG"
+
+# HDF5 settings
 hdf_key: "galaxies"
-
-# Directory prefixes where dataframes will be stored should get the snap number attached
-dir_prefix : 'snap_'
-
-# Dataframe prefix should also get the snap_number attached to it
-df_name : 'testing_df_'
-
-# file endings
-hdf_ending : '.hdf5'
-
-# scale that should be cutout relative to the virial radius
-cutout_scale : '1.1' 
+dir_prefix: "snap_"
+df_name: "testing_df_"
+hdf_ending: ".hdf5"
+cutout_scale: "1.1"

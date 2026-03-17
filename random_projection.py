@@ -8,19 +8,19 @@ class RandomProjection:
     def __init__(
         self,
         df_name,
+        backend,
         save_name=None,
         snap_range=None,
         in_aperture=True,
         aperture_size=0.6,
-        serra=False,
     ):
         self.df_name = df_name + config["hdf_ending"]
         self.save_name = save_name
         self.snap_range = snap_range
+        self.backend = backend
 
         self.in_aperture = in_aperture
         self.aperture_size = aperture_size
-        self.serra = serra
 
         self._df_path = None
         self._save_path = None
@@ -62,7 +62,7 @@ class RandomProjection:
         try:
             v_range = np.quantile(gas["los_Velocities"], [0.1, 0.9])
             W80 = v_range[1] - v_range[0]
-        except:
+        except Exception:
             W80 = np.nan
         return W80
     
@@ -82,13 +82,11 @@ class RandomProjection:
                             )
         print("Starting random projections")
             
+        id_col = self.backend.get_halo_id_column()
         for _, element in iteration_df.iterrows():
             theta = theta_angles[counter]
             counter += 1
-            if self.serra:
-                halo_id = int(element.idx)
-            else:
-                halo_id = int(element.Halo_id)
+            halo_id = int(element[id_col])
             snap = int(element.snap)
 
             gal = GalaxyProjections(
@@ -98,34 +96,32 @@ class RandomProjection:
                 projection_angle_theta=theta,
                 projection_angle_phi=phi,
                 aperture_size=self.aperture_size,
-                serra=self.serra,
+                backend=self.backend,
             )
             try:
                 gal.project_outflows()
-                if self.in_aperture:
-                    remain_gas = gal.get_in_aperture(gal.remain_gas)
-                    out_gas = gal.get_in_aperture(gal.out_gas)
-                else:
-                    remain_gas = gal.remain_gas
-                    out_gas = gal.out_gas
-
+                remain_gas = (
+                    gal.get_in_aperture(gal.remain_gas) if self.in_aperture else gal.remain_gas
+                )
+                out_gas = (
+                    gal.get_in_aperture(gal.out_gas) if self.in_aperture else gal.out_gas
+                )
                 W80_galaxy = self.get_offset_W80(remain_gas)
                 W80_outflow = self.get_offset_W80(out_gas)
-            except:
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning("Random W80 failed: %s", e)
                 W80_galaxy = np.nan
                 W80_outflow = np.nan
 
-            self.df.loc[
-                (self.df.snap == snap) & (self.df.Halo_id == halo_id),
-                "W80_sample_galaxy_aperture",
-            ] = W80_galaxy
-
-            self.df.loc[
-                (self.df.snap == snap) & (self.df.Halo_id == halo_id),
-                "W80_sample_outflow_aperture",
-            ] = W80_outflow
+            loc = (self.df.snap == snap) & (self.df[id_col] == halo_id)
+            self.df.loc[loc, "W80_sample_galaxy_aperture"] = W80_galaxy
+            self.df.loc[loc, "W80_sample_outflow_aperture"] = W80_outflow
             if counter % 100 == 0:
-                print(f"Processed {counter/len(iteration_df)*100:.2f}% of galaxies")
+                import logging
+                logging.getLogger(__name__).info(
+                    "Processed %.2f%% of galaxies", counter / len(iteration_df) * 100
+                )
                 self.save_df()
         return
         
@@ -133,12 +129,17 @@ class RandomProjection:
         self.df.to_hdf(self.save_path, key="galaxies")
 
 if __name__ == "__main__":
-    updater = RandomProjection(df_name="in_aperture_final", 
-                               save_name="random_projections", 
-                               snap_range=(13, 26), 
-                               in_aperture=True, 
-                               aperture_size=0.6, 
-                               serra=False)
+    from tng_backend import TNGBackend
+    from config import config as _cfg
+    backend = TNGBackend(config=_cfg)
+    updater = RandomProjection(
+        df_name="in_aperture_final",
+        backend=backend,
+        save_name="random_projections",
+        snap_range=(13, 26),
+        in_aperture=True,
+        aperture_size=0.6,
+    )
     updater.add_random_W80()
     updater.save_df()
 

@@ -4,8 +4,12 @@
 !/*ipynb
 !/*.md
 !/*.yml
+!/*.toml
 !/deprecated/*.py
 !/deprecated/*.ipynb
 !/deprecated
 !/misc
 !/misc/*.py
+!/tests
+!/tests/*.py
+!/tests/__init__.py

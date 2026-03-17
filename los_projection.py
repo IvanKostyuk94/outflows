@@ -1,15 +1,13 @@
-import numpy as np
-from process_gas import Galaxy
-from scipy.spatial.transform import Rotation as R
-from utils import map_to_new_dict
-
 """Project the galactic gas as well as the outflow gas along the
-line of sight of the observer. After the initial rotation during the 
-initialization of the galaxy the galaxy is facing into the 
+line of sight of the observer. After the initial rotation during the
+initialization of the galaxy the galaxy is facing into the
 (0,0,1) (assuming it has a disc like structure). An angle of 0 corresponds
 to viewing the galaxy face on and an angle of 90 corresponds to viewing
 the galaxy edge on.
 """
+import numpy as np
+from process_gas import Galaxy
+from utils import map_to_new_dict
 
 
 class GalaxyProjections(Galaxy):
@@ -19,11 +17,11 @@ class GalaxyProjections(Galaxy):
         halo_id,
         snap,
         projection_angle_theta,
-        aperture_size = 0.6,
+        aperture_size=0.6,
         projection_angle_phi=0,
         group_props=None,
         out_gas_sel="GMM",
-        serra=False,
+        backend=None,
     ):
         super().__init__(
             df,
@@ -33,7 +31,7 @@ class GalaxyProjections(Galaxy):
             group_props=group_props,
             out_gas_sel=out_gas_sel,
             aperture_size=aperture_size,
-            serra=serra,
+            backend=backend,
         )
         self.angle_phi = projection_angle_phi
         self.angle_theta = projection_angle_theta
@@ -55,24 +53,6 @@ class GalaxyProjections(Galaxy):
                 ]
             )
         return self._view_dir
-
-    # Depricated as the gas is already alligned with the z-axis
-    # def line_of_sight_projection(self):
-    #     z_axis = np.array([[0, 0, 1]])
-    #     rotation, _ = R.align_vectors(z_axis, np.array([self.view_dir]))
-    #     self.gas["Coordinates"] = rotation.apply(self.gas["Coordinates"])
-    #     self.gas["Relative_Velocities"] = rotation.apply(
-    #         self.gas["Relative_Velocities"]
-    #     )
-
-    #     self.out_gas["Coordinates"] = rotation.apply(
-    #         self.out_gas["Coordinates"]
-    #     )
-
-    #     self.out_gas["Relative_Velocities"] = rotation.apply(
-    #         self.out_gas["Relative_Velocities"]
-    #     )
-    #     return
 
     def project_outflows(self):
         self.out_gas["los_Velocities"] = np.float32(

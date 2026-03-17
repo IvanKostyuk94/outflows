@@ -154,13 +154,11 @@ def merge_data_bases(
             for key in df.columns:
                 try:
                     df_dict[key].extend(list(df[key].copy()))
-                except:
-                    # del df_dict[key]
-                    # continue
-                    # Just for debugging
-                    print(key)
-                    print(snap)
-                    print(f"{key} will be dropped from this dataframe")
+                except (KeyError, ValueError) as e:
+                    import logging
+                    logging.getLogger(__name__).warning(
+                        "Snap %s: dropping key %r — %s", snap, key, e
+                    )
             df_dict["snap"].extend((np.ones(len(df)) * snap).astype(int))
             df_dict["idx"].extend(df.index)
 

@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "outflows"
+version = "0.1.0"
+description = "Measuring galactic outflows in cosmological simulations"
+requires-python = ">=3.9"
+dependencies = [
+    "numpy",
+    "scipy",
+    "scikit-learn",
+    "pandas",
+    "astropy",
+    "h5py",
+    "matplotlib",
+    "pyyaml",
+    "numba",
+    "tables",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+tng = ["illustris_python"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
