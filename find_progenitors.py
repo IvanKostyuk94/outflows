@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from config import config
 from process_gas import Galaxy
-from pyTNG.cosmology import TNGcosmo
+from tng_cosmo import TNGcosmo
 from utils import get_redshift
 
 

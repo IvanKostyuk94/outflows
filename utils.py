@@ -2,8 +2,7 @@ import os
 import h5py
 import pandas as pd
 import numpy as np
-from pyTNG import data_interface as _data_interface
-from pyTNG.cosmology import TNGcosmo
+from tng_cosmo import TNGcosmo
 from astropy import units as u
 from astropy.constants import G
 from config import config
@@ -12,12 +11,16 @@ from astropy import constants as c
 from sklearn.decomposition import PCA
 
 
-def get_sim():
-    basepath = config["tng_datapath"]  # "/virgotng/universe/IllustrisTNG/"
+def get_sim_path():
+    """Return the path to the simulation output directory."""
+    basepath = config["tng_datapath"]
     sim_name = config["sim_name"]
-    sim = _data_interface.TNG50Simulation(os.path.join(basepath, sim_name))
-    sim_path = os.path.join(basepath, sim_name, "output")
-    return sim, sim_path
+    return os.path.join(basepath, sim_name, "output")
+
+
+def get_sim():
+    """Backward-compatible wrapper. Returns (None, sim_path)."""
+    return None, get_sim_path()
 
 
 def get_redshift(snap_num):
@@ -355,6 +358,53 @@ def create_particle_box(gas, df, idx, z, stars=None):
     pca = PCA(3)
     pca.fit(gas["Coordinates"])
     gas["Coordinates"] = pca.transform(gas["Coordinates"])
+
+
+def dfFromArrDict(arrDict):
+    """
+    Create a pandas DataFrame from dict of arrays.
+
+    Creates a multi-indexed DataFrame from the 2D arrays contained in a
+    dictionary. The first level of indices are the dictionary keys and the
+    second level of indices are integers 0 to D-1 where D is the second
+    dimension of the array value corresponding to each key.
+    """
+    import warnings
+    tuples = []
+    keys = []
+    problem_keys = []
+    for key, arr in arrDict.items():
+        try:
+            sh = arr.shape
+        except AttributeError:
+            problem_keys.append(key)
+            continue
+        keys.append(key)
+        if len(sh) == 1:
+            tuples.append((key, 0))
+        elif len(sh) == 2:
+            tuples.extend([(key, i) for i in range(sh[1])])
+        else:
+            raise RuntimeError(
+                "Got array with dimension > two at key: " + str(key)
+            )
+
+    if problem_keys:
+        warnings.warn(
+            "Could not integrate the following keys into dataframe: "
+            + str(problem_keys)
+            + "!\nMaybe the associated values are scalar"
+            + " and this is actually expected?"
+        )
+
+    index = pd.MultiIndex.from_tuples(tuples)
+    df = pd.DataFrame(columns=index)
+    for key in keys:
+        if arrDict[key].ndim == 1:
+            df[key] = arrDict[key]
+        else:
+            df.loc[:, key] = arrDict[key]
+    return df
 
 
 if __name__ == "__main__":

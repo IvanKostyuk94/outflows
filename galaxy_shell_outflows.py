@@ -1,5 +1,5 @@
 from process_gas import Galaxy
-from pyTNG.cosmology import TNGcosmo
+from tng_cosmo import TNGcosmo
 from utils import map_to_new_dict
 import numpy as np
 

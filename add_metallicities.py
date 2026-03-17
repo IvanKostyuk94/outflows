@@ -1,13 +1,13 @@
 import numpy as np
 import pandas as pd
 import os
-from pyTNG.utils import dfFromArrDict
+import illustris_python as il
+from utils import dfFromArrDict, get_sim_path
 from config import config
-from utils import get_sim
 
 
-def get_metalliciy_df(sim, snap_num):
-    dataset = next(sim.group_cat[snap_num].chunk_generator("subhalo"))
+def get_metalliciy_df(sim_path, snap_num):
+    dataset = il.groupcat.loadSubhalos(sim_path, snap_num)
     keys_needed = [
         "SubhaloGasMetallicity",
         "SubhaloGasMetallicityHalfRad",
@@ -18,8 +18,8 @@ def get_metalliciy_df(sim, snap_num):
     return dataset_df
 
 
-def get_v_df(sim, snap_num):
-    dataset = next(sim.group_cat[snap_num].chunk_generator("subhalo"))
+def get_v_df(sim_path, snap_num):
+    dataset = il.groupcat.loadSubhalos(sim_path, snap_num)
     keys_needed = [
         "SubhaloVelDisp",
         "SubhaloVmax",
@@ -30,16 +30,16 @@ def get_v_df(sim, snap_num):
 
 
 def add_quantities(df_name, type="Metallicity"):
-    sim, _ = get_sim()
+    sim_path = get_sim_path()
     df_path = os.path.join(config["base_path"], df_name)
     df = pd.read_hdf(df_path)
     for snap in df.snap.unique():
         print(f"Working on snap {snap}")
         sub_df = df[df["snap"] == snap]
         if type == "Metallicity":
-            data_df = get_metalliciy_df(sim, snap_num=snap)
+            data_df = get_metalliciy_df(sim_path, snap_num=snap)
         elif type == "Velocities":
-            data_df = get_v_df(sim, snap_num=snap)
+            data_df = get_v_df(sim_path, snap_num=snap)
         else:
             raise NotImplementedError(f"{type} is not implemented yet")
         print("Finished creating df")

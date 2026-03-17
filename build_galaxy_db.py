@@ -1,16 +1,16 @@
 import os
 import numpy as np
 import pandas as pd
-import pyTNG.utils as utils
-from pyTNG.cosmology import TNGcosmo
+import illustris_python as il
+from tng_cosmo import TNGcosmo
 from config import config
-from utils import get_sim
+from utils import get_sim_path, dfFromArrDict
 
 h = TNGcosmo.h
 
 
-def get_halo_df(sim, snap_num):
-    dataset = next(sim.group_cat[snap_num].chunk_generator("halo"))
+def get_halo_df(sim_path, snap_num):
+    dataset = il.groupcat.loadHalos(sim_path, snap_num)
     keys_needed = [
         "GroupFirstSub",
         "Group_R_Crit200",
@@ -19,14 +19,14 @@ def get_halo_df(sim, snap_num):
         "GroupMassType",
     ]
     sub_dict = {key: dataset[key] for key in keys_needed}
-    dataset_df = utils.dfFromArrDict(sub_dict)
+    dataset_df = dfFromArrDict(sub_dict)
     for key in dataset_df.keys():
         dataset_df[key] = dataset_df[key].astype(np.float64)
     return dataset_df
 
 
-def get_galaxy_df(sim, snap_num):
-    dataset = next(sim.group_cat[snap_num].chunk_generator("subhalo"))
+def get_galaxy_df(sim_path, snap_num):
+    dataset = il.groupcat.loadSubhalos(sim_path, snap_num)
     keys_needed = [
         "SubhaloPos",
         "SubhaloVel",
@@ -38,7 +38,7 @@ def get_galaxy_df(sim, snap_num):
         "SubhaloGrNr",
     ]
     sub_dict = {key: dataset[key] for key in keys_needed}
-    dataset_df = utils.dfFromArrDict(sub_dict)
+    dataset_df = dfFromArrDict(sub_dict)
     for key in dataset_df.keys():
         dataset_df[key] = dataset_df[key].astype(np.float64)
     return dataset_df
@@ -85,12 +85,12 @@ def reduce_galaxy_df(df):
 
 
 def get_reduced_df(snap, type="halo"):
-    sim, _ = get_sim()
+    sim_path = get_sim_path()
     if type == "halo":
-        df = get_halo_df(sim, snap)
+        df = get_halo_df(sim_path, snap)
         df = reduce_halo_df(df)
     elif type == "galaxy":
-        df = get_galaxy_df(sim, snap)
+        df = get_galaxy_df(sim_path, snap)
         df = reduce_galaxy_df(df)
     else:
         raise NotImplementedError(f"{type} is not implemented")

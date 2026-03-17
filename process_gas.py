@@ -20,8 +20,8 @@ from utils import (
     sort_all_keys,
     calculate_acc,
 )
-from pyTNG import gas_temperature
-from pyTNG.cosmology import TNGcosmo
+from scipy.constants import m_p as _m_p, k as _k_B
+from tng_cosmo import TNGcosmo
 from gaussian_outflow_selection import (
     group_gas,
     select_galaxy_group,
@@ -247,7 +247,7 @@ class Galaxy:
             self._get_flow(self._gas)
             self._get_rot_vel(self._gas)
             if not self.serra:
-                gas_temperature.gasTemp(self._gas)
+                self._compute_gas_temperature(self._gas)
                 self._get_hsml()
             self._gas = self.rotate_into_galactic_plane(self._gas)
             self.get_los_projections()
@@ -357,6 +357,13 @@ class Galaxy:
             tot_ang_mom = np.sum(ang_mom, axis=1)
             self._ang_mom_dir = tot_ang_mom / np.linalg.norm(tot_ang_mom)
         return self._ang_mom_dir
+
+    @staticmethod
+    def _compute_gas_temperature(gas, X_H=0.76):
+        """Compute gas temperature [K] from internal energy and electron abundance."""
+        gamma = 5 / 3
+        mu = 4 / (1 + 3 * X_H + 4 * X_H * gas["ElectronAbundance"]) * _m_p
+        gas["Temperature"] = 1e6 * mu * (gamma - 1) * gas["InternalEnergy"] / _k_B
 
     def _convert_density(self, gas):
         """Convert density to electron density in cgs units."""

@@ -1,8 +1,8 @@
 import numpy as np
-from pyTNG import gridding
+import sph_gridding
 
 from utils import scale_factor
-from pyTNG.cosmology import TNGcosmo
+from tng_cosmo import TNGcosmo
 from los_projection import GalaxyProjections
 
 
@@ -106,7 +106,7 @@ class GasGridder(GalaxyProjections):
             filtered_quants = None
         if "v_z" in self.quants:
             gas["v_z"] = np.float32(gas["Relative_Velocities"][:, 2])
-        grids = gridding.depositParticlesOnGrid(
+        grids = sph_gridding.deposit_particles_on_grid(
             gas_parts=gas,
             method="sphKernelDep",
             quants=filtered_quants,
@@ -117,7 +117,7 @@ class GasGridder(GalaxyProjections):
             n_threads=self.n_threads,
         )
         if "StarFormationRate" in self.quants:
-            grid_sfr = gridding.depositParticlesOnGrid(
+            grid_sfr = sph_gridding.deposit_particles_on_grid(
                 gas_parts=gas,
                 method="sphKernelDep",
                 quants=[],
