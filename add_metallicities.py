@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import os
 import illustris_python as il
-from utils import dfFromArrDict, get_sim_path
+from utils import dfFromArrDict
 from config import config
 
 
@@ -30,7 +30,7 @@ def get_v_df(sim_path, snap_num):
 
 
 def add_quantities(df_name, type="Metallicity"):
-    sim_path = get_sim_path()
+    sim_path = os.path.join(config["tng_datapath"], config["sim_name"], "output")
     df_path = os.path.join(config["base_path"], df_name)
     df = pd.read_hdf(df_path)
     for snap in df.snap.unique():

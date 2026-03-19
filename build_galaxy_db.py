@@ -4,7 +4,7 @@ import pandas as pd
 import illustris_python as il
 from tng_cosmo import TNGcosmo
 from config import config
-from utils import get_sim_path, dfFromArrDict
+from utils import dfFromArrDict
 
 h = TNGcosmo.h
 
@@ -85,7 +85,7 @@ def reduce_galaxy_df(df):
 
 
 def get_reduced_df(snap, type="halo"):
-    sim_path = get_sim_path()
+    sim_path = os.path.join(config["tng_datapath"], config["sim_name"], "output")
     if type == "halo":
         df = get_halo_df(sim_path, snap)
         df = reduce_halo_df(df)

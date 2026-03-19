@@ -13,3 +13,6 @@
 !/tests
 !/tests/*.py
 !/tests/__init__.py
+!/plotting
+!/plotting/*.py
+!plotting/__pycache__/

@@ -3,11 +3,11 @@
 #   OUTFLOWS_BASE_PATH, TNG_DATAPATH, OUTFLOWS_SIM_NAME
 
 # Base path where output dataframes are stored
-# base_path: "/path/to/output"
+base_path: "/ptmp/mpa/ivkos/outflows"
 
 # TNG simulation data location
-# tng_datapath: "/path/to/IllustrisTNG/"
-# sim_name: "L35n2160TNG"
+tng_datapath: "/virgotng/universe/IllustrisTNG"
+sim_name: "L35n2160TNG"
 
 # HDF5 settings
 hdf_key: "galaxies"

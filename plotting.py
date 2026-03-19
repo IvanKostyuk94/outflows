@@ -653,7 +653,7 @@ def plot_density_histogram(
 
 
 def plot_los_histograms(
-    halo_id, snap, df, angles_theta, angles_phi, bin_n=100
+    halo_id, snap, df, angles_theta, angles_phi, backend, bin_n=100
 ):
     columns = len(angles_theta)
     rows = len(angles_phi)
@@ -677,6 +677,7 @@ def plot_los_histograms(
                 snap=int(snap),
                 projection_angle_theta=theta,
                 projection_angle_phi=phi,
+                backend=backend,
             )
 
             gal.project_outflows()
@@ -1488,6 +1489,7 @@ def plot_prop_maps_grouped(
     df,
     snap,
     props,
+    backend,
     grid_size=100,
     method="GMM",
     group_props=None,
@@ -1496,7 +1498,6 @@ def plot_prop_maps_grouped(
     projection_angle_theta=None,
     projection_angle_phi=0,
     for_slides=False,
-    serra=False,
 ):
     label_colors(for_slides)
 
@@ -1504,13 +1505,13 @@ def plot_prop_maps_grouped(
         df=df,
         halo_id=halo_id,
         snap=snap,
+        backend=backend,
         group_props=group_props,
         out_gas_sel=method,
         grid_size=grid_size,
         quants=props,
         projection_angle_theta=projection_angle_theta,
         projection_angle_phi=projection_angle_phi,
-        serra=serra,
     )
     for prop in props:
         plot_prop_maps(gridder, prop, dirs, sizebar_length)
@@ -1932,15 +1933,15 @@ def get_W80(gas):
     return W80
 
 
-def plot_distributions(df, id, snap):
+def plot_distributions(df, id, snap, backend):
     mstar = df[(df.idx == id) & (df.snap == snap)]["M_star_log"].values[0]
     gal_0 = GalaxyProjections(
         df=df,
         halo_id=id,
         snap=snap,
         projection_angle_theta=0,
-        serra=True,
         aperture_size=0.6,
+        backend=backend,
     )
     gal_0.project_outflows()
     gal_90 = GalaxyProjections(
@@ -1948,8 +1949,8 @@ def plot_distributions(df, id, snap):
         halo_id=id,
         snap=snap,
         projection_angle_theta=90,
-        serra=True,
         aperture_size=0.6,
+        backend=backend,
     )
     gal_90.project_outflows()
     remain_gas_0 = gal_0.get_in_aperture(gal_0.remain_gas)
@@ -2092,9 +2093,9 @@ def add_textbox(ax, quantile_out, quantile_remain):
     )
 
 
-def w80_histogram_single(df, halo_id, snap, serra=False):
+def w80_histogram_single(df, halo_id, snap, backend):
     galaxy = GalaxyProjections(
-        df, halo_id=halo_id, snap=snap, projection_angle_theta=0, serra=serra
+        df, halo_id=halo_id, snap=snap, projection_angle_theta=0, backend=backend
     )
     galaxy.project_outflows()
     remain_0 = galaxy.remain_gas["los_Velocities"].copy()
@@ -2103,7 +2104,7 @@ def w80_histogram_single(df, halo_id, snap, serra=False):
     outflow_0_quant = np.percentile(outflow_0, [10, 90])
 
     galaxy = GalaxyProjections(
-        df, halo_id=halo_id, snap=snap, projection_angle_theta=90, serra=serra
+        df, halo_id=halo_id, snap=snap, projection_angle_theta=90, backend=backend
     )
     galaxy.project_outflows()
     remain_90 = galaxy.remain_gas["los_Velocities"].copy()
